@@ -561,11 +561,22 @@ export class Game {
       (this.player.pos.x - this.camera.x) * pixelsPerMeter;
     if (playerScreenX >= GameConfig.followScreenX) return;
 
-    const targetCameraX =
+    const desiredCameraX =
       this.player.pos.x +
       (GameConfig.worldAnchorScreenX - GameConfig.followScreenX) / pixelsPerMeter;
-    const smoothing = 1 - Math.exp(-GameConfig.camera.followRate * deltaTime);
-    this.camera.x = Math.min(this.camera.x, lerp(this.camera.x, targetCameraX, smoothing));
+    const followRate = GameConfig.camera.followRate;
+    // Feed the horizontal velocity into the target. A plain smooth interpolation
+    // always trails a moving target, pushing the player left of the intended
+    // anchor; this term cancels that steady-state lag while keeping the onset soft.
+    const velocityCompensatedTarget =
+      desiredCameraX + this.player.vel.x / followRate;
+    const smoothing = 1 - Math.exp(-followRate * deltaTime);
+    const nextCameraX = lerp(
+      this.camera.x,
+      velocityCompensatedTarget,
+      smoothing,
+    );
+    this.camera.x = Math.min(this.camera.x, nextCameraX);
   }
 
   private getShakeOffset(): Vec2 {

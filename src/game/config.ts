@@ -6,7 +6,8 @@ export const GameConfig = {
   pixelsPerMeter: 6,
   groundScreenY: 780,
   worldAnchorScreenX: 1300,
-  followScreenX: 560,
+  // One third in from the right edge, leaving most of the view ahead (left).
+  followScreenX: 1060,
   fixedStep: 1 / 120,
   maxFrameDelta: 0.05,
 
@@ -73,7 +74,7 @@ export const GameConfig = {
   },
 
   camera: {
-    followRate: 5,
+    followRate: 6,
     shakeDuration: 0.28,
     shakeStrength: 10,
   },
