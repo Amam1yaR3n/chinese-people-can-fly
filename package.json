@@ -1,0 +1,16 @@
+{
+  "name": "chinese-people-can-fly",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build --config vite.offline.config.ts && vite build",
+    "build:offline": "tsc --noEmit && vite build --config vite.offline.config.ts",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1"
+  }
+}

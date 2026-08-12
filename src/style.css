@@ -1,0 +1,173 @@
+:root {
+  color: #142033;
+  background: #0e1727;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 20%, #263a5a 0, #131f33 48%, #09111e 100%);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button,
+canvas {
+  -webkit-tap-highlight-color: transparent;
+}
+
+#game-shell {
+  position: relative;
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  overflow: hidden;
+  background: #bde9ff;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.hud {
+  position: absolute;
+  inset: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  padding: clamp(10px, 2vw, 30px) clamp(12px, 2.5vw, 40px);
+  pointer-events: none;
+}
+
+.hud h1,
+.hud output,
+.hud button {
+  margin: 0;
+  color: #142033;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 0 rgb(255 255 255 / 55%);
+}
+
+.hud h1 {
+  align-self: center;
+  font-size: clamp(14px, 2.1vw, 34px);
+}
+
+.hud output {
+  padding: 0.2em 0.65em 0.28em;
+  border: max(2px, 0.16vw) solid #142033;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 76%);
+  font-size: clamp(15px, 2.35vw, 38px);
+  line-height: 1.1;
+  box-shadow: 0 0.16em 0 #142033;
+}
+
+.hud button {
+  justify-self: end;
+  padding: 0.55em 0.8em;
+  border: max(2px, 0.14vw) solid #142033;
+  border-radius: 999px;
+  background: #fffdf5;
+  font: inherit;
+  font-size: clamp(11px, 1.25vw, 20px);
+  line-height: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 0.16em 0 #142033;
+}
+
+.hud button:active {
+  transform: translateY(0.12em);
+  box-shadow: 0 0.04em 0 #142033;
+}
+
+.hud button:focus-visible {
+  outline: 4px solid #ffb000;
+  outline-offset: 3px;
+}
+
+.result {
+  position: absolute;
+  left: 50%;
+  top: 36%;
+  display: grid;
+  min-width: min(440px, 62%);
+  translate: -50% -50%;
+  padding: clamp(14px, 2vw, 30px) clamp(22px, 4vw, 64px);
+  border: max(3px, 0.3vw) solid #142033;
+  background: rgb(255 253 245 / 94%);
+  text-align: center;
+  box-shadow: 0 clamp(7px, 0.8vw, 13px) 0 #142033;
+  pointer-events: none;
+}
+
+.result[hidden] {
+  display: none;
+}
+
+.result span {
+  font-size: clamp(12px, 1.5vw, 24px);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.result strong {
+  margin-top: 0.12em;
+  font-size: clamp(30px, 5.5vw, 86px);
+  line-height: 1;
+}
+
+.portrait-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  place-items: center;
+  align-content: center;
+  gap: 24px;
+  background: #142033;
+  color: #fffdf5;
+  font-size: clamp(22px, 7vw, 42px);
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.portrait-overlay:not([hidden]) {
+  display: grid;
+}
+
+.rotate-icon {
+  width: 82px;
+  height: 132px;
+  border: 7px solid #fffdf5;
+  border-radius: 12px;
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud button:active {
+    transform: none;
+  }
+}

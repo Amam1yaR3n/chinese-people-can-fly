@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#bde9ff" />
+    <meta name="description" content="纯几何图形街机小游戏《中国人能飞》" />
+    <title>中国人能飞</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <main id="game-shell" aria-label="中国人能飞游戏区域">
+      <canvas id="game" width="1600" height="900" aria-label="游戏画面"></canvas>
+
+      <header class="hud" aria-live="polite">
+        <h1>中国人能飞</h1>
+        <output id="distance" aria-label="当前最远距离">0 米</output>
+        <button id="mute" type="button" aria-pressed="false">声音 开</button>
+      </header>
+
+      <section id="result" class="result" aria-live="assertive" hidden>
+        <span>本局距离</span>
+        <strong id="result-distance">0 米</strong>
+      </section>
+
+      <section id="portrait-overlay" class="portrait-overlay" hidden>
+        <div class="rotate-icon" aria-hidden="true"></div>
+        <strong>请旋转为横屏</strong>
+      </section>
+    </main>
+    <script>
+      const useOfflineBundle =
+        window.location.protocol === "file:" ||
+        new URLSearchParams(window.location.search).has("offline");
+
+      if (useOfflineBundle) {
+        const offlineScript = document.createElement("script");
+        offlineScript.src = "./offline/game.js";
+        offlineScript.onerror = () => {
+          document.body.innerHTML = `
+            <main style="min-height:100vh;display:grid;place-items:center;background:#142033;color:#fffdf5;font:700 20px system-ui;text-align:center;padding:32px">
+              <div>离线游戏文件缺失。<br><small style="font-weight:400">请在项目目录执行 npm.cmd run build 后重试。</small></div>
+            </main>`;
+        };
+        document.body.append(offlineScript);
+      }
+    </script>
+    <script type="module">
+      const useOfflineBundle =
+        window.location.protocol === "file:" ||
+        new URLSearchParams(window.location.search).has("offline");
+
+      if (!useOfflineBundle) {
+        void import("./src/main.ts");
+      }
+    </script>
+  </body>
+</html>
