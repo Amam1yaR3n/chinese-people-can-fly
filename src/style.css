@@ -28,7 +28,6 @@ body {
   -webkit-user-select: none;
 }
 
-button,
 canvas {
   -webkit-tap-highlight-color: transparent;
 }
@@ -61,8 +60,7 @@ canvas {
 }
 
 .hud h1,
-.hud output,
-.hud button {
+.hud output {
   margin: 0;
   color: #142033;
   font-weight: 900;
@@ -85,28 +83,8 @@ canvas {
   box-shadow: 0 0.16em 0 #142033;
 }
 
-.hud button {
+#score {
   justify-self: end;
-  padding: 0.55em 0.8em;
-  border: max(2px, 0.14vw) solid #142033;
-  border-radius: 999px;
-  background: #fffdf5;
-  font: inherit;
-  font-size: clamp(11px, 1.25vw, 20px);
-  line-height: 1;
-  pointer-events: auto;
-  cursor: pointer;
-  box-shadow: 0 0.16em 0 #142033;
-}
-
-.hud button:active {
-  transform: translateY(0.12em);
-  box-shadow: 0 0.04em 0 #142033;
-}
-
-.hud button:focus-visible {
-  outline: 4px solid #ffb000;
-  outline-offset: 3px;
 }
 
 .result {
@@ -140,6 +118,12 @@ canvas {
   line-height: 1;
 }
 
+.result small {
+  margin-top: 0.7em;
+  font-size: clamp(12px, 1.4vw, 22px);
+  font-weight: 800;
+}
+
 .portrait-overlay {
   position: fixed;
   inset: 0;
@@ -164,10 +148,4 @@ canvas {
   border: 7px solid #fffdf5;
   border-radius: 12px;
   transform: rotate(90deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hud button:active {
-    transform: none;
-  }
 }

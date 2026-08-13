@@ -7,6 +7,9 @@ import type {
   GameSnapshot,
   MineState,
   ParticleState,
+  PickupState,
+  PickupType,
+  PlayerMode,
   PlayerState,
   SwingState,
   Vec2,
@@ -20,6 +23,7 @@ const lerp = (from: number, to: number, amount: number): number =>
 
 const easeInCubic = (value: number): number => value * value * value;
 const easeOutCubic = (value: number): number => 1 - (1 - value) ** 3;
+const DISTANCE_EPSILON = 1e-7;
 
 const randomBetween = (
   random: () => number,
@@ -68,15 +72,28 @@ interface SwingRuntime {
   connected: boolean;
 }
 
+interface PowerUpRuntime {
+  mode: PlayerMode;
+  remainingDistance: number;
+}
+
 export class Game {
   private phase: GamePhase = "ready";
   private player: PlayerState;
   private swing: SwingRuntime;
-  private camera: CameraState = { x: 0, shakeTime: 0, shakeStrength: 0 };
+  private camera: CameraState = { x: 0, y: 0, shakeTime: 0, shakeStrength: 0 };
+  private powerUp: PowerUpRuntime = {
+    mode: "normal",
+    remainingDistance: 0,
+  };
+  private verticalTrackingActive = false;
   private mines: MineState[] = [];
+  private pickups: PickupState[] = [];
   private particles: ParticleState[] = [];
   private explosions: ExplosionState[] = [];
   private maxDistance = 0;
+  private skipCount = 0;
+  private redPacketCount = 0;
   private landingElapsed = 0;
   private landingWasAirborne = false;
   private impactVelocity: Vec2 = { x: 0, y: 0 };
@@ -85,6 +102,8 @@ export class Game {
   private random: () => number = Math.random;
   private nextMineDistance: number = GameConfig.mine.firstMin;
   private mineId = 0;
+  private nextPickupDistance: number = GameConfig.pickup.safeDistance;
+  private pickupId = 0;
 
   constructor(private readonly emitAudio: (event: AudioEvent) => void) {
     this.player = this.createPlayer();
@@ -93,9 +112,14 @@ export class Game {
   }
 
   getSnapshot(): GameSnapshot {
+    const distance = Math.max(0, Math.floor(this.maxDistance));
     return {
       phase: this.phase,
-      distance: Math.max(0, Math.floor(this.maxDistance)),
+      distance,
+      score:
+        Math.floor(this.maxDistance / 10) +
+        this.skipCount * 5 +
+        this.redPacketCount * 50,
       ended: this.phase === "ended",
     };
   }
@@ -117,7 +141,9 @@ export class Game {
         }
         break;
       case "airborne":
-        this.handleAirborneAction();
+        if (this.powerUp.mode === "normal") {
+          this.handleAirborneAction();
+        }
         break;
       case "landingGrace":
         this.handleLandingAction();
@@ -128,6 +154,7 @@ export class Game {
   }
 
   update(deltaTime: number): void {
+    const previousPlayerPosition = { ...this.player.pos };
     this.updateSwing(deltaTime);
 
     switch (this.phase) {
@@ -150,7 +177,9 @@ export class Game {
 
     this.maxDistance = Math.max(this.maxDistance, -this.player.pos.x);
     this.ensureMines(this.maxDistance + GameConfig.mine.generationAhead);
+    this.ensurePickups(this.maxDistance + GameConfig.pickup.generationAhead);
     this.updateCamera(deltaTime);
+    this.updatePickups(deltaTime, previousPlayerPosition);
     this.updateEffects(deltaTime);
   }
 
@@ -194,8 +223,15 @@ export class Game {
     this.phase = startImmediately ? "falling" : "ready";
     this.player = this.createPlayer();
     this.swing = this.createSwing();
-    this.camera = { x: 0, shakeTime: 0, shakeStrength: 0 };
+    this.camera = { x: 0, y: 0, shakeTime: 0, shakeStrength: 0 };
+    this.powerUp = {
+      mode: "normal",
+      remainingDistance: 0,
+    };
+    this.verticalTrackingActive = false;
     this.maxDistance = 0;
+    this.skipCount = 0;
+    this.redPacketCount = 0;
     this.landingElapsed = 0;
     this.landingWasAirborne = false;
     this.impactVelocity = { x: 0, y: 0 };
@@ -204,7 +240,9 @@ export class Game {
     this.particles = [];
     this.explosions = [];
     this.mines = [];
+    this.pickups = [];
     this.mineId = 0;
+    this.pickupId = 0;
 
     const seedArray = new Uint32Array(1);
     crypto.getRandomValues(seedArray);
@@ -214,7 +252,13 @@ export class Game {
       GameConfig.mine.firstMin,
       GameConfig.mine.firstMax,
     );
+    this.nextPickupDistance = randomBetween(
+      this.random,
+      GameConfig.pickup.safeDistance,
+      GameConfig.pickup.firstMaxDistance,
+    );
     this.ensureMines(GameConfig.mine.generationAhead);
+    this.ensurePickups(GameConfig.pickup.generationAhead);
   }
 
   private updateInitialFall(deltaTime: number): void {
@@ -226,6 +270,15 @@ export class Game {
   }
 
   private updateAirborne(deltaTime: number): void {
+    if (this.powerUp.mode === "lantern") {
+      this.updateLanternFlight(deltaTime);
+      return;
+    }
+    if (this.powerUp.mode === "jet") {
+      this.updateJetFlight(deltaTime);
+      return;
+    }
+
     this.player.vel.y += GameConfig.gravity * deltaTime;
     this.player.pos.x += this.player.vel.x * deltaTime;
     this.player.pos.y += this.player.vel.y * deltaTime;
@@ -234,6 +287,40 @@ export class Game {
 
     if (this.player.pos.y >= this.groundCenterY()) {
       this.beginLanding(true);
+    }
+  }
+
+  private updateLanternFlight(deltaTime: number): void {
+    const { ascentSpeed } = GameConfig.powerUp.lantern;
+    const ascent = Math.min(
+      ascentSpeed * deltaTime,
+      this.powerUp.remainingDistance,
+    );
+    this.player.pos.x += this.player.vel.x * deltaTime;
+    this.player.pos.y -= ascent;
+    this.player.vel.y = -ascentSpeed;
+    this.powerUp.remainingDistance -= ascent;
+
+    if (this.powerUp.remainingDistance <= DISTANCE_EPSILON) {
+      this.powerUp.mode = "normal";
+      this.powerUp.remainingDistance = 0;
+      this.player.vel.y = 0;
+    }
+  }
+
+  private updateJetFlight(deltaTime: number): void {
+    const { speed } = GameConfig.powerUp.jet;
+    const travel = Math.min(speed * deltaTime, this.powerUp.remainingDistance);
+    this.player.pos.x -= travel;
+    this.player.vel.x = -speed;
+    this.player.vel.y = 0;
+    this.powerUp.remainingDistance -= travel;
+
+    if (this.powerUp.remainingDistance <= DISTANCE_EPSILON) {
+      this.powerUp.mode = "normal";
+      this.powerUp.remainingDistance = 0;
+      this.player.vel.x = -GameConfig.powerUp.jet.exitSpeed;
+      this.player.vel.y = 0;
     }
   }
 
@@ -320,6 +407,7 @@ export class Game {
     this.player.vel.x = this.impactVelocity.x * GameConfig.skip.horizontalRetention;
     this.player.vel.y =
       -Math.abs(this.impactVelocity.y) * GameConfig.skip.verticalRetention;
+    this.skipCount += 1;
     this.resetApproachState();
     this.emitAudio("skip");
   }
@@ -501,6 +589,169 @@ export class Game {
     }
   }
 
+  private ensurePickups(targetDistance: number): void {
+    while (this.nextPickupDistance <= targetDistance) {
+      const type = this.choosePickupType();
+      const pickupConfig = this.getPickupConfig(type);
+      const altitude = randomBetween(
+        this.random,
+        pickupConfig.minAltitude,
+        pickupConfig.maxAltitude,
+      );
+      this.pickups.push({
+        id: this.pickupId,
+        type,
+        distance: this.nextPickupDistance,
+        pos: { x: -this.nextPickupDistance, y: -altitude },
+        status: "available",
+      });
+      this.pickupId += 1;
+      this.nextPickupDistance += randomBetween(
+        this.random,
+        GameConfig.pickup.intervalMin,
+        GameConfig.pickup.intervalMax,
+      );
+    }
+  }
+
+  private choosePickupType(): PickupType {
+    const roll = this.random();
+    if (roll < GameConfig.pickup.redPacket.weight) return "redPacket";
+    if (
+      roll <
+      GameConfig.pickup.redPacket.weight + GameConfig.pickup.skyLantern.weight
+    ) {
+      return "skyLantern";
+    }
+    return "sixthGenJet";
+  }
+
+  private getPickupConfig(type: PickupType) {
+    switch (type) {
+      case "redPacket":
+        return GameConfig.pickup.redPacket;
+      case "skyLantern":
+        return GameConfig.pickup.skyLantern;
+      case "sixthGenJet":
+        return GameConfig.pickup.sixthGenJet;
+    }
+  }
+
+  private updatePickups(
+    deltaTime: number,
+    previousPlayerPosition: Vec2,
+  ): void {
+    if (this.phase === "airborne") {
+      for (const pickup of this.pickups) {
+        if (pickup.status !== "available") continue;
+        if (
+          this.powerUp.mode === "jet" &&
+          pickup.type !== "redPacket"
+        ) {
+          continue;
+        }
+        if (this.powerUp.mode === "jet" && pickup.type === "redPacket") {
+          continue;
+        }
+        if (
+          pointToSegmentDistance(
+            pickup.pos,
+            previousPlayerPosition,
+            this.player.pos,
+          ) <= GameConfig.pickup.radius
+        ) {
+          this.collectPickup(pickup);
+        }
+      }
+
+      if (this.powerUp.mode === "jet") {
+        this.lockVisibleRedPackets();
+      }
+    }
+
+    this.updateAttractingRedPackets(deltaTime);
+    const cleanupBefore = this.maxDistance - GameConfig.pickup.cleanupBehind;
+    this.pickups = this.pickups.filter(
+      (pickup) =>
+        pickup.status === "attracting" ||
+        (pickup.status !== "collected" && pickup.distance >= cleanupBefore),
+    );
+  }
+
+  private collectPickup(pickup: PickupState): void {
+    pickup.status = "collected";
+    switch (pickup.type) {
+      case "redPacket":
+        this.redPacketCount += 1;
+        break;
+      case "skyLantern":
+        this.powerUp.mode = "lantern";
+        this.powerUp.remainingDistance =
+          GameConfig.powerUp.lantern.ascentDistance;
+        this.player.vel.y = -GameConfig.powerUp.lantern.ascentSpeed;
+        this.verticalTrackingActive = true;
+        this.resetApproachState();
+        break;
+      case "sixthGenJet":
+        this.powerUp.mode = "jet";
+        this.powerUp.remainingDistance = GameConfig.powerUp.jet.travelDistance;
+        this.player.vel.x = -GameConfig.powerUp.jet.speed;
+        this.player.vel.y = 0;
+        this.verticalTrackingActive = true;
+        this.resetApproachState();
+        break;
+    }
+  }
+
+  private lockVisibleRedPackets(): void {
+    for (const pickup of this.pickups) {
+      if (
+        pickup.type !== "redPacket" ||
+        pickup.status !== "available" ||
+        !this.isPickupVisible(pickup)
+      ) {
+        continue;
+      }
+      pickup.status = "attracting";
+      this.redPacketCount += 1;
+    }
+  }
+
+  private isPickupVisible(pickup: PickupState): boolean {
+    const screen = this.worldToScreen(pickup.pos);
+    const pickupConfig = this.getPickupConfig(pickup.type);
+    const halfWidth =
+      (pickupConfig.width * GameConfig.pixelsPerMeter) / 2;
+    const halfHeight =
+      (pickupConfig.height * GameConfig.pixelsPerMeter) / 2;
+    return (
+      screen.x + halfWidth >= 0 &&
+      screen.x - halfWidth <= GameConfig.logicalWidth &&
+      screen.y + halfHeight >= 0 &&
+      screen.y - halfHeight <= GameConfig.logicalHeight
+    );
+  }
+
+  private updateAttractingRedPackets(deltaTime: number): void {
+    const travel = GameConfig.pickup.magnetSpeed * deltaTime;
+    for (const pickup of this.pickups) {
+      if (pickup.status !== "attracting") continue;
+      const offsetX = this.player.pos.x - pickup.pos.x;
+      const offsetY = this.player.pos.y - pickup.pos.y;
+      const distance = Math.hypot(offsetX, offsetY);
+      if (
+        distance <= GameConfig.pickup.magnetCollectDistance ||
+        travel >= distance
+      ) {
+        pickup.pos = { ...this.player.pos };
+        pickup.status = "collected";
+        continue;
+      }
+      pickup.pos.x += (offsetX / distance) * travel;
+      pickup.pos.y += (offsetY / distance) * travel;
+    }
+  }
+
   private clearDistanceSign(distance: number): number {
     const interval = GameConfig.signs.interval;
     const remainder = distance % interval;
@@ -559,24 +810,57 @@ export class Game {
     const playerScreenX =
       GameConfig.worldAnchorScreenX +
       (this.player.pos.x - this.camera.x) * pixelsPerMeter;
-    if (playerScreenX >= GameConfig.followScreenX) return;
+    if (playerScreenX < GameConfig.followScreenX) {
+      const desiredCameraX =
+        this.player.pos.x +
+        (GameConfig.worldAnchorScreenX - GameConfig.followScreenX) /
+          pixelsPerMeter;
+      const followRate = GameConfig.camera.followRate;
+      // Feed the horizontal velocity into the target. A plain smooth interpolation
+      // always trails a moving target, pushing the player left of the intended
+      // anchor; this term cancels that steady-state lag while keeping the onset soft.
+      const velocityCompensatedTarget =
+        desiredCameraX + this.player.vel.x / followRate;
+      const smoothing = 1 - Math.exp(-followRate * deltaTime);
+      const nextCameraX = lerp(
+        this.camera.x,
+        velocityCompensatedTarget,
+        smoothing,
+      );
+      this.camera.x = Math.min(this.camera.x, nextCameraX);
+    }
 
-    const desiredCameraX =
-      this.player.pos.x +
-      (GameConfig.worldAnchorScreenX - GameConfig.followScreenX) / pixelsPerMeter;
-    const followRate = GameConfig.camera.followRate;
-    // Feed the horizontal velocity into the target. A plain smooth interpolation
-    // always trails a moving target, pushing the player left of the intended
-    // anchor; this term cancels that steady-state lag while keeping the onset soft.
-    const velocityCompensatedTarget =
-      desiredCameraX + this.player.vel.x / followRate;
-    const smoothing = 1 - Math.exp(-followRate * deltaTime);
-    const nextCameraX = lerp(
-      this.camera.x,
-      velocityCompensatedTarget,
-      smoothing,
+    if (this.powerUp.mode !== "normal") {
+      this.verticalTrackingActive = true;
+    }
+    if (!this.verticalTrackingActive) return;
+
+    const desiredCameraY = Math.min(
+      0,
+      this.player.pos.y +
+        (GameConfig.groundScreenY -
+          GameConfig.camera.verticalFollowScreenY) /
+          pixelsPerMeter,
     );
-    this.camera.x = Math.min(this.camera.x, nextCameraX);
+    const verticalRate = GameConfig.camera.verticalFollowRate;
+    const velocityCompensatedTarget = Math.min(
+      0,
+      desiredCameraY + this.player.vel.y / verticalRate,
+    );
+    const verticalSmoothing = 1 - Math.exp(-verticalRate * deltaTime);
+    this.camera.y = Math.min(
+      0,
+      lerp(this.camera.y, velocityCompensatedTarget, verticalSmoothing),
+    );
+
+    if (
+      this.powerUp.mode === "normal" &&
+      desiredCameraY === 0 &&
+      Math.abs(this.camera.y) < 0.05
+    ) {
+      this.camera.y = 0;
+      this.verticalTrackingActive = false;
+    }
   }
 
   private getShakeOffset(): Vec2 {
@@ -626,15 +910,23 @@ export class Game {
     this.drawGround(context);
     this.drawDistanceSigns(context);
     this.drawMines(context);
+    this.drawPickups(context);
     this.drawHitterAndClub(context);
     this.drawEffects(context);
     this.drawPlayer(context);
   }
 
   private drawGround(context: CanvasRenderingContext2D): void {
-    const { logicalWidth, logicalHeight, groundScreenY, palette } = GameConfig;
+    const { logicalWidth, logicalHeight, palette } = GameConfig;
+    const groundScreenY = this.worldToScreenY(0);
+    if (groundScreenY >= logicalHeight) return;
     context.fillStyle = palette.ground;
-    context.fillRect(0, groundScreenY, logicalWidth, logicalHeight - groundScreenY);
+    context.fillRect(
+      0,
+      Math.max(0, groundScreenY),
+      logicalWidth,
+      logicalHeight - Math.max(0, groundScreenY),
+    );
     context.fillStyle = palette.groundTop;
     context.fillRect(0, groundScreenY, logicalWidth, 12);
     context.fillStyle = palette.groundDark;
@@ -665,7 +957,7 @@ export class Game {
       distance += GameConfig.signs.interval
     ) {
       const x = this.worldToScreenX(-distance);
-      const groundY = GameConfig.groundScreenY;
+      const groundY = this.worldToScreenY(0);
       context.fillStyle = GameConfig.palette.ink;
       context.fillRect(x - 5, groundY - 72, 10, 72);
       context.fillStyle = GameConfig.palette.sign;
@@ -686,7 +978,7 @@ export class Game {
       if (mine.exploded) continue;
       const x = this.worldToScreenX(mine.pos.x);
       if (x < -60 || x > GameConfig.logicalWidth + 60) continue;
-      const groundY = GameConfig.groundScreenY;
+      const groundY = this.worldToScreenY(0);
       const width = GameConfig.mine.width * GameConfig.pixelsPerMeter;
       const height = GameConfig.mine.height * GameConfig.pixelsPerMeter;
 
@@ -719,11 +1011,192 @@ export class Game {
     }
   }
 
+  private drawPickups(context: CanvasRenderingContext2D): void {
+    for (const pickup of this.pickups) {
+      if (pickup.status === "collected") continue;
+      const screen = this.worldToScreen(pickup.pos);
+      if (
+        screen.x < -120 ||
+        screen.x > GameConfig.logicalWidth + 120 ||
+        screen.y < -120 ||
+        screen.y > GameConfig.logicalHeight + 120
+      ) {
+        continue;
+      }
+      const pickupConfig = this.getPickupConfig(pickup.type);
+      const width = pickupConfig.width * GameConfig.pixelsPerMeter;
+      const height = pickupConfig.height * GameConfig.pixelsPerMeter;
+      switch (pickup.type) {
+        case "redPacket":
+          this.drawRedPacketIcon(context, screen, width, height);
+          break;
+        case "skyLantern":
+          this.drawSkyLanternIcon(context, screen, width, height);
+          break;
+        case "sixthGenJet":
+          this.drawJetIcon(context, screen, width, height);
+          break;
+      }
+    }
+  }
+
+  private drawRedPacketIcon(
+    context: CanvasRenderingContext2D,
+    screen: Vec2,
+    width: number,
+    height: number,
+  ): void {
+    context.save();
+    context.translate(screen.x, screen.y);
+    context.lineJoin = "round";
+    context.fillStyle = GameConfig.palette.redPacket;
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 4;
+    context.beginPath();
+    context.roundRect(-width / 2, -height / 2, width, height, 6);
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = GameConfig.palette.redPacketDark;
+    context.beginPath();
+    context.moveTo(-width / 2 + 2, -height / 2 + 2);
+    context.lineTo(0, height * 0.06);
+    context.lineTo(width / 2 - 2, -height / 2 + 2);
+    context.closePath();
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = GameConfig.palette.gold;
+    context.beginPath();
+    context.arc(0, height * 0.08, height * 0.15, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.restore();
+  }
+
+  private drawSkyLanternIcon(
+    context: CanvasRenderingContext2D,
+    screen: Vec2,
+    width: number,
+    height: number,
+  ): void {
+    context.save();
+    context.translate(screen.x, screen.y);
+    context.lineJoin = "round";
+
+    this.traceSkyLantern(context, width, height);
+    context.save();
+    context.clip();
+    context.fillStyle = GameConfig.palette.lanternOrange;
+    context.fillRect(-width / 2, -height / 2, width, height);
+    context.fillStyle = GameConfig.palette.lanternYellow;
+    context.fillRect(-width / 2, -height * 0.02, width, height * 0.52);
+    context.restore();
+
+    this.traceSkyLantern(context, width, height);
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 4;
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(0, -height / 2 + 3);
+    context.lineTo(0, height * 0.4);
+    context.stroke();
+
+    const baseWidth = width * 0.62;
+    const baseHeight = Math.max(7, height * 0.12);
+    context.fillStyle = GameConfig.palette.redPacket;
+    context.beginPath();
+    context.roundRect(
+      -baseWidth / 2,
+      height * 0.38,
+      baseWidth,
+      baseHeight,
+      baseHeight / 2,
+    );
+    context.fill();
+    context.stroke();
+    context.restore();
+  }
+
+  private traceSkyLantern(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+  ): void {
+    context.beginPath();
+    context.moveTo(0, -height / 2);
+    context.lineTo(width * 0.32, -height * 0.43);
+    context.lineTo(width * 0.46, -height * 0.27);
+    context.lineTo(width * 0.43, height * 0.08);
+    context.lineTo(width * 0.27, height * 0.42);
+    context.lineTo(-width * 0.27, height * 0.42);
+    context.lineTo(-width * 0.43, height * 0.08);
+    context.lineTo(-width * 0.46, -height * 0.27);
+    context.lineTo(-width * 0.32, -height * 0.43);
+    context.closePath();
+  }
+
+  private drawJetIcon(
+    context: CanvasRenderingContext2D,
+    screen: Vec2,
+    width: number,
+    height: number,
+  ): void {
+    context.save();
+    context.translate(screen.x, screen.y);
+    context.lineJoin = "round";
+    this.traceJet(context, width, height);
+    context.fillStyle = GameConfig.palette.jet;
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 5;
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = GameConfig.palette.jetLight;
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 3;
+    context.beginPath();
+    context.moveTo(-width * 0.31, 0);
+    context.lineTo(-width * 0.18, -height * 0.17);
+    context.lineTo(-width * 0.02, -height * 0.12);
+    context.lineTo(width * 0.02, 0);
+    context.lineTo(-width * 0.02, height * 0.12);
+    context.lineTo(-width * 0.18, height * 0.17);
+    context.closePath();
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = GameConfig.palette.jetAccent;
+    context.fillRect(width * 0.08, -height * 0.3, width * 0.12, height * 0.16);
+    context.restore();
+  }
+
+  private traceJet(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+  ): void {
+    context.beginPath();
+    context.moveTo(-width / 2, 0);
+    context.lineTo(-width * 0.14, -height * 0.18);
+    context.lineTo(width * 0.2, -height / 2);
+    context.lineTo(width * 0.43, -height / 2);
+    context.lineTo(width * 0.27, -height * 0.12);
+    context.lineTo(width / 2, -height * 0.03);
+    context.lineTo(width / 2, height * 0.03);
+    context.lineTo(width * 0.27, height * 0.12);
+    context.lineTo(width * 0.43, height / 2);
+    context.lineTo(width * 0.2, height / 2);
+    context.lineTo(-width * 0.14, height * 0.18);
+    context.closePath();
+  }
+
   private drawHitterAndClub(context: CanvasRenderingContext2D): void {
     const hitterX = this.worldToScreenX(GameConfig.hitter.x);
     const width = GameConfig.hitter.width * GameConfig.pixelsPerMeter;
     const height = GameConfig.hitter.height * GameConfig.pixelsPerMeter;
-    const hitterY = GameConfig.groundScreenY - height;
+    const hitterY = this.worldToScreenY(0) - height;
     if (hitterX > -200 && hitterX < GameConfig.logicalWidth + 200) {
       context.fillStyle = GameConfig.palette.hitterEdge;
       context.fillRect(hitterX - width / 2 - 4, hitterY - 4, width + 8, height + 4);
@@ -768,13 +1241,17 @@ export class Game {
     const height = this.player.height * GameConfig.pixelsPerMeter;
     const heightAboveGround = Math.max(0, -this.player.pos.y - this.player.height / 2);
     const shadowScale = clamp(1 - heightAboveGround / 100, 0.18, 1);
+    const shadowWidth =
+      this.powerUp.mode === "jet"
+        ? GameConfig.pickup.sixthGenJet.width * GameConfig.pixelsPerMeter
+        : width;
 
     context.fillStyle = "rgb(20 32 51 / 18%)";
     context.beginPath();
     context.ellipse(
       screen.x,
-      GameConfig.groundScreenY + 8,
-      width * 0.72 * shadowScale,
+      this.worldToScreenY(0) + 8,
+      shadowWidth * 0.72 * shadowScale,
       8 * shadowScale,
       0,
       0,
@@ -782,6 +1259,57 @@ export class Game {
     );
     context.fill();
 
+    if (this.powerUp.mode === "jet") {
+      this.drawJetIcon(
+        context,
+        screen,
+        GameConfig.pickup.sixthGenJet.width * GameConfig.pixelsPerMeter,
+        GameConfig.pickup.sixthGenJet.height * GameConfig.pixelsPerMeter,
+      );
+      return;
+    }
+
+    if (this.powerUp.mode === "lantern") {
+      const lanternWidth =
+        GameConfig.pickup.skyLantern.width * GameConfig.pixelsPerMeter;
+      const lanternHeight =
+        GameConfig.pickup.skyLantern.height * GameConfig.pixelsPerMeter;
+      const ropeLength = 14;
+      const lanternScreen = {
+        x: screen.x,
+        y: screen.y - height / 2 - ropeLength - lanternHeight / 2,
+      };
+      context.strokeStyle = GameConfig.palette.ink;
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(
+        lanternScreen.x - lanternWidth * 0.2,
+        lanternScreen.y + lanternHeight * 0.48,
+      );
+      context.lineTo(screen.x - width * 0.3, screen.y - height / 2);
+      context.moveTo(
+        lanternScreen.x + lanternWidth * 0.2,
+        lanternScreen.y + lanternHeight * 0.48,
+      );
+      context.lineTo(screen.x + width * 0.3, screen.y - height / 2);
+      context.stroke();
+      this.drawSkyLanternIcon(
+        context,
+        lanternScreen,
+        lanternWidth,
+        lanternHeight,
+      );
+    }
+
+    this.drawOriginalPlayer(context, screen, width, height);
+  }
+
+  private drawOriginalPlayer(
+    context: CanvasRenderingContext2D,
+    screen: Vec2,
+    width: number,
+    height: number,
+  ): void {
     context.fillStyle = GameConfig.palette.playerEdge;
     context.fillRect(
       screen.x - width / 2 - 4,
@@ -830,7 +1358,7 @@ export class Game {
   private worldToScreen(position: Vec2): Vec2 {
     return {
       x: this.worldToScreenX(position.x),
-      y: GameConfig.groundScreenY + position.y * GameConfig.pixelsPerMeter,
+      y: this.worldToScreenY(position.y),
     };
   }
 
@@ -838,6 +1366,13 @@ export class Game {
     return (
       GameConfig.worldAnchorScreenX +
       (worldX - this.camera.x) * GameConfig.pixelsPerMeter
+    );
+  }
+
+  private worldToScreenY(worldY: number): number {
+    return (
+      GameConfig.groundScreenY +
+      (worldY - this.camera.y) * GameConfig.pixelsPerMeter
     );
   }
 

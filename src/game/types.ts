@@ -13,6 +13,12 @@ export type GamePhase =
 
 export type SwingState = "idle" | "downswing" | "followThrough" | "done";
 
+export type PickupType = "redPacket" | "skyLantern" | "sixthGenJet";
+
+export type PickupStatus = "available" | "attracting" | "collected";
+
+export type PlayerMode = "normal" | "lantern" | "jet";
+
 export interface PlayerState {
   pos: Vec2;
   vel: Vec2;
@@ -27,8 +33,17 @@ export interface MineState {
   exploded: boolean;
 }
 
+export interface PickupState {
+  id: number;
+  type: PickupType;
+  distance: number;
+  pos: Vec2;
+  status: PickupStatus;
+}
+
 export interface CameraState {
   x: number;
+  y: number;
   shakeTime: number;
   shakeStrength: number;
 }
@@ -55,5 +70,6 @@ export interface ExplosionState {
 export interface GameSnapshot {
   phase: GamePhase;
   distance: number;
+  score: number;
   ended: boolean;
 }
