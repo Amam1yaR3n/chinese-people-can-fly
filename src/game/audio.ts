@@ -3,14 +3,13 @@ import type { AudioEvent } from "./types";
 export class AudioController {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
-  private muted = false;
 
   async unlock(): Promise<void> {
     if (!this.context) {
       const AudioContextClass = window.AudioContext;
       this.context = new AudioContextClass();
       this.master = this.context.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.72;
+      this.master.gain.value = 0.72;
       this.master.connect(this.context.destination);
     }
 
@@ -19,20 +18,8 @@ export class AudioController {
     }
   }
 
-  toggleMuted(): boolean {
-    this.muted = !this.muted;
-    if (this.context && this.master) {
-      this.master.gain.setTargetAtTime(
-        this.muted ? 0 : 0.72,
-        this.context.currentTime,
-        0.015,
-      );
-    }
-    return this.muted;
-  }
-
   play(event: AudioEvent): void {
-    if (!this.context || !this.master || this.muted) return;
+    if (!this.context || !this.master) return;
 
     switch (event) {
       case "swing":

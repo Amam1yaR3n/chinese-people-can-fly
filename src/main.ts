@@ -4,17 +4,19 @@ import { Game } from "./game/game";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 const distanceOutput = document.querySelector<HTMLOutputElement>("#distance");
+const scoreOutput = document.querySelector<HTMLOutputElement>("#score");
 const resultPanel = document.querySelector<HTMLElement>("#result");
+const resultScore = document.querySelector<HTMLElement>("#result-score");
 const resultDistance = document.querySelector<HTMLElement>("#result-distance");
-const muteButton = document.querySelector<HTMLButtonElement>("#mute");
 const portraitOverlay = document.querySelector<HTMLElement>("#portrait-overlay");
 
 if (
   !canvas ||
   !distanceOutput ||
+  !scoreOutput ||
   !resultPanel ||
+  !resultScore ||
   !resultDistance ||
-  !muteButton ||
   !portraitOverlay
 ) {
   throw new Error("游戏页面缺少必要的 DOM 元素。");
@@ -54,16 +56,25 @@ const updateOrientationPause = (): void => {
   if (portraitPaused) accumulator = 0;
 };
 
+const updateOutput = (
+  output: HTMLOutputElement,
+  value: string,
+): void => {
+  if (output.value === value) return;
+  output.value = value;
+  output.textContent = value;
+};
+
 const updateHud = (): void => {
   const snapshot = game.getSnapshot();
   const formattedDistance = `${snapshot.distance} 米`;
-  if (distanceOutput.value !== formattedDistance) {
-    distanceOutput.value = formattedDistance;
-    distanceOutput.textContent = formattedDistance;
-  }
+  const formattedScore = `${snapshot.score} 分`;
+  updateOutput(distanceOutput, formattedDistance);
+  updateOutput(scoreOutput, formattedScore);
   resultPanel.hidden = !snapshot.ended;
   if (snapshot.ended) {
-    resultDistance.textContent = formattedDistance;
+    resultScore.textContent = formattedScore;
+    resultDistance.textContent = `最远距离 ${formattedDistance}`;
   }
   document.body.dataset.phase = snapshot.phase;
 };
@@ -78,7 +89,6 @@ const performAction = (): void => {
 window.addEventListener(
   "pointerdown",
   (event) => {
-    if ((event.target as Element | null)?.closest("#mute")) return;
     event.preventDefault();
     performAction();
   },
@@ -89,20 +99,6 @@ window.addEventListener("keydown", (event) => {
   if (event.code !== "Space" || event.repeat) return;
   event.preventDefault();
   performAction();
-});
-
-muteButton.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-  event.stopPropagation();
-});
-
-muteButton.addEventListener("click", (event) => {
-  event.preventDefault();
-  event.stopPropagation();
-  void audio.unlock();
-  const muted = audio.toggleMuted();
-  muteButton.textContent = muted ? "声音 关" : "声音 开";
-  muteButton.setAttribute("aria-pressed", String(muted));
 });
 
 window.addEventListener("resize", resizeCanvas);
