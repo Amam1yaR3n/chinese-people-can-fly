@@ -1,45 +1,157 @@
 import type { AudioEvent } from "./types";
 
+const BGM_PATH = "./assets/audio/bgm.m4a";
+const LAUNCH_HIT_PATH = "./assets/audio/launch-hit.mp3";
+const SKY_LANTERN_PICKUP_PATH = "./assets/audio/sky-lantern-pickup.mp3";
+const SIXTH_GEN_JET_PICKUP_PATH =
+  "./assets/audio/sixth-gen-jet-pickup.mp3";
+const MINE_TRIGGER_PATH = "./assets/audio/mine-trigger.mp3";
+const WATER_SKIP_PATH = "./assets/audio/water-skip.mp3";
+const RED_PACKET_PICKUP_PATH = "./assets/audio/red-packet-pickup.mp3";
+const LAUNCH_HIT_VOLUME_SCALE = 0.62;
+
 export class AudioController {
   private context: AudioContext | null = null;
-  private master: GainNode | null = null;
+  private effectsGain: GainNode | null = null;
+  private readonly bgm: HTMLAudioElement;
+  private readonly launchHit: HTMLAudioElement;
+  private readonly skyLanternPickup: HTMLAudioElement;
+  private readonly sixthGenJetPickup: HTMLAudioElement;
+  private readonly mineTrigger: HTMLAudioElement;
+  private readonly waterSkip: HTMLAudioElement;
+  private readonly redPacketPickup: HTMLAudioElement;
+  private musicVolume: number;
+  private effectsVolume: number;
+  private unlocked = false;
+  private lifecyclePaused = false;
+
+  constructor(musicVolume = 0.48, effectsVolume = 0.72) {
+    this.musicVolume = this.clampVolume(musicVolume);
+    this.effectsVolume = this.clampVolume(effectsVolume);
+    this.bgm = this.createMedia(BGM_PATH, this.musicVolume, true);
+    this.launchHit = this.createMedia(
+      LAUNCH_HIT_PATH,
+      this.effectsVolume * LAUNCH_HIT_VOLUME_SCALE,
+    );
+    this.skyLanternPickup = this.createMedia(
+      SKY_LANTERN_PICKUP_PATH,
+      this.effectsVolume,
+    );
+    this.sixthGenJetPickup = this.createMedia(
+      SIXTH_GEN_JET_PICKUP_PATH,
+      this.effectsVolume,
+    );
+    this.mineTrigger = this.createMedia(MINE_TRIGGER_PATH, this.effectsVolume);
+    this.waterSkip = this.createMedia(WATER_SKIP_PATH, this.effectsVolume);
+    this.redPacketPickup = this.createMedia(
+      RED_PACKET_PICKUP_PATH,
+      this.effectsVolume,
+    );
+  }
 
   async unlock(): Promise<void> {
     if (!this.context) {
       const AudioContextClass = window.AudioContext;
       this.context = new AudioContextClass();
-      this.master = this.context.createGain();
-      this.master.gain.value = 0.72;
-      this.master.connect(this.context.destination);
+      this.effectsGain = this.context.createGain();
+      this.effectsGain.gain.value = this.effectsVolume;
+      this.effectsGain.connect(this.context.destination);
     }
+
+    this.unlocked = true;
+    this.playBgm();
 
     if (this.context.state === "suspended") {
       await this.context.resume();
     }
   }
 
+  setPaused(paused: boolean): void {
+    this.lifecyclePaused = paused;
+    if (paused) {
+      this.bgm.pause();
+      return;
+    }
+    this.playBgm();
+  }
+
+  setMusicVolume(volume: number): void {
+    this.musicVolume = this.clampVolume(volume);
+    this.bgm.volume = this.musicVolume;
+  }
+
+  setEffectsVolume(volume: number): void {
+    this.effectsVolume = this.clampVolume(volume);
+    this.launchHit.volume = this.effectsVolume * LAUNCH_HIT_VOLUME_SCALE;
+    this.skyLanternPickup.volume = this.effectsVolume;
+    this.sixthGenJetPickup.volume = this.effectsVolume;
+    this.mineTrigger.volume = this.effectsVolume;
+    this.waterSkip.volume = this.effectsVolume;
+    this.redPacketPickup.volume = this.effectsVolume;
+    if (this.context && this.effectsGain) {
+      this.effectsGain.gain.setValueAtTime(
+        this.effectsVolume,
+        this.context.currentTime,
+      );
+    }
+  }
+
+  previewEffect(): void {
+    this.tone(540, 760, 0.09, 0.1, "sine");
+  }
+
   play(event: AudioEvent): void {
-    if (!this.context || !this.master) return;
+    if (!this.context || !this.effectsGain) return;
 
     switch (event) {
       case "swing":
         this.noise(0.17, 0.07, "bandpass", 1050);
         break;
       case "hit":
-        this.tone(175, 72, 0.11, 0.15, "triangle");
-        this.noise(0.055, 0.055, "lowpass", 920);
+        this.replay(this.launchHit);
         break;
       case "land":
         this.tone(92, 48, 0.12, 0.09, "sine");
         break;
       case "skip":
-        this.tone(320, 230, 0.045, 0.024, "sine");
+        this.replay(this.waterSkip);
         break;
       case "explosion":
-        this.noise(0.38, 0.2, "lowpass", 1450);
-        this.tone(78, 36, 0.32, 0.12, "sawtooth");
+        this.replay(this.mineTrigger);
+        break;
+      case "pickupRedPacket":
+        this.replay(this.redPacketPickup);
+        break;
+      case "pickupLantern":
+        this.replay(this.skyLanternPickup);
+        break;
+      case "pickupJet":
+        this.replay(this.sixthGenJetPickup);
         break;
     }
+  }
+
+  private replay(audio: HTMLAudioElement): void {
+    audio.currentTime = 0;
+    void audio.play().catch(() => undefined);
+  }
+
+  private createMedia(path: string, volume: number, loop = false): HTMLAudioElement {
+    const audio = new Audio(new URL(path, document.baseURI).href);
+    audio.preload = "auto";
+    audio.volume = volume;
+    audio.loop = loop;
+    return audio;
+  }
+
+  private clampVolume(volume: number): number {
+    if (!Number.isFinite(volume)) return 0;
+    return Math.min(1, Math.max(0, volume));
+  }
+
+  private playBgm(): void {
+    if (!this.unlocked || this.lifecyclePaused || !this.bgm.paused) return;
+    void this.bgm.play().catch(() => undefined);
   }
 
   private tone(
@@ -50,8 +162,8 @@ export class AudioController {
     type: OscillatorType,
   ): void {
     const context = this.context;
-    const master = this.master;
-    if (!context || !master) return;
+    const effectsGain = this.effectsGain;
+    if (!context || !effectsGain) return;
 
     const now = context.currentTime;
     const oscillator = context.createOscillator();
@@ -65,7 +177,7 @@ export class AudioController {
     gain.gain.setValueAtTime(volume, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     oscillator.connect(gain);
-    gain.connect(master);
+    gain.connect(effectsGain);
     oscillator.start(now);
     oscillator.stop(now + duration + 0.02);
   }
@@ -77,8 +189,8 @@ export class AudioController {
     frequency: number,
   ): void {
     const context = this.context;
-    const master = this.master;
-    if (!context || !master) return;
+    const effectsGain = this.effectsGain;
+    if (!context || !effectsGain) return;
 
     const frameCount = Math.ceil(context.sampleRate * duration);
     const buffer = context.createBuffer(1, frameCount, context.sampleRate);
@@ -99,7 +211,7 @@ export class AudioController {
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(master);
+    gain.connect(effectsGain);
     source.start(now);
   }
 }

@@ -48,7 +48,15 @@ export interface CameraState {
   shakeStrength: number;
 }
 
-export type AudioEvent = "swing" | "hit" | "land" | "skip" | "explosion";
+export type AudioEvent =
+  | "swing"
+  | "hit"
+  | "land"
+  | "skip"
+  | "explosion"
+  | "pickupRedPacket"
+  | "pickupLantern"
+  | "pickupJet";
 
 export interface ParticleState {
   pos: Vec2;

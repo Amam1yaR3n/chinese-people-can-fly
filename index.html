@@ -18,8 +18,129 @@
       <header class="hud" aria-live="polite">
         <h1>中国人能飞</h1>
         <output id="distance" aria-label="当前最远距离">0 米</output>
-        <output id="score" aria-label="当前分数">0 分</output>
+        <div class="hud-actions">
+          <output id="score" aria-label="当前分数">0 分</output>
+          <button
+            id="settings-button"
+            class="settings-button"
+            type="button"
+            aria-label="打开声音设置"
+            aria-controls="settings-dialog"
+            aria-expanded="false"
+          >
+            <svg viewBox="0 0 28 28" aria-hidden="true">
+              <g>
+                <rect x="11.7" y="1.2" width="4.6" height="7.2" rx="1.2" />
+                <rect
+                  x="11.7"
+                  y="1.2"
+                  width="4.6"
+                  height="7.2"
+                  rx="1.2"
+                  transform="rotate(45 14 14)"
+                />
+                <rect
+                  x="11.7"
+                  y="1.2"
+                  width="4.6"
+                  height="7.2"
+                  rx="1.2"
+                  transform="rotate(90 14 14)"
+                />
+                <rect
+                  x="11.7"
+                  y="1.2"
+                  width="4.6"
+                  height="7.2"
+                  rx="1.2"
+                  transform="rotate(135 14 14)"
+                />
+                <rect
+                  x="11.7"
+                  y="1.2"
+                  width="4.6"
+                  height="7.2"
+                  rx="1.2"
+                  transform="rotate(180 14 14)"
+                />
+                <rect
+                  x="11.7"
+                  y="1.2"
+                  width="4.6"
+                  height="7.2"
+                  rx="1.2"
+                  transform="rotate(225 14 14)"
+                />
+                <rect
+                  x="11.7"
+                  y="1.2"
+                  width="4.6"
+                  height="7.2"
+                  rx="1.2"
+                  transform="rotate(270 14 14)"
+                />
+                <rect
+                  x="11.7"
+                  y="1.2"
+                  width="4.6"
+                  height="7.2"
+                  rx="1.2"
+                  transform="rotate(315 14 14)"
+                />
+                <circle cx="14" cy="14" r="8.3" />
+                <circle class="gear-hole" cx="14" cy="14" r="3.4" />
+              </g>
+            </svg>
+          </button>
+        </div>
       </header>
+
+      <section
+        id="settings-dialog"
+        class="settings-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        hidden
+      >
+        <div class="settings-panel">
+          <button
+            id="settings-close"
+            class="settings-close"
+            type="button"
+            aria-label="关闭声音设置"
+          >
+            ×
+          </button>
+          <h2 id="settings-title">声音设置</h2>
+
+          <label class="volume-control" for="music-volume">
+            <span>音乐音量</span>
+            <output id="music-volume-value" for="music-volume">48%</output>
+            <input
+              id="music-volume"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value="48"
+            />
+          </label>
+
+          <label class="volume-control" for="effects-volume">
+            <span>音效音量</span>
+            <output id="effects-volume-value" for="effects-volume">72%</output>
+            <input
+              id="effects-volume"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value="72"
+            />
+          </label>
+        </div>
+      </section>
 
       <section id="result" class="result" aria-live="assertive" hidden>
         <span>本局得分</span>
