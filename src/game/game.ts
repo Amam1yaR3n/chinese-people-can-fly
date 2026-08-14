@@ -1,4 +1,11 @@
 import { GameConfig } from "./config";
+import {
+  BatterFrames,
+  drawSpritePose,
+  FlyerPoses,
+  MinePose,
+  type CharacterSprites,
+} from "./sprites";
 import type {
   AudioEvent,
   CameraState,
@@ -21,8 +28,6 @@ const clamp = (value: number, minimum: number, maximum: number): number =>
 const lerp = (from: number, to: number, amount: number): number =>
   from + (to - from) * amount;
 
-const easeInCubic = (value: number): number => value * value * value;
-const easeOutCubic = (value: number): number => 1 - (1 - value) ** 3;
 const DISTANCE_EPSILON = 1e-7;
 
 const randomBetween = (
@@ -67,9 +72,6 @@ const pointToSegmentDistance = (
 interface SwingRuntime {
   state: SwingState;
   elapsed: number;
-  angle: number;
-  previousAngle: number;
-  connected: boolean;
 }
 
 interface PowerUpRuntime {
@@ -105,7 +107,10 @@ export class Game {
   private nextPickupDistance: number = GameConfig.pickup.safeDistance;
   private pickupId = 0;
 
-  constructor(private readonly emitAudio: (event: AudioEvent) => void) {
+  constructor(
+    private readonly emitAudio: (event: AudioEvent) => void,
+    private readonly sprites: CharacterSprites | null,
+  ) {
     this.player = this.createPlayer();
     this.swing = this.createSwing();
     this.resetRound(false);
@@ -136,8 +141,8 @@ export class Game {
         if (this.swing.state === "idle") {
           this.swing.state = "downswing";
           this.swing.elapsed = 0;
-          this.swing.connected = false;
           this.emitAudio("swing");
+          this.tryInitialLaunch();
         }
         break;
       case "airborne":
@@ -213,9 +218,6 @@ export class Game {
     return {
       state: "idle",
       elapsed: 0,
-      angle: GameConfig.club.idleAngle,
-      previousAngle: GameConfig.club.idleAngle,
-      connected: false,
     };
   }
 
@@ -262,7 +264,7 @@ export class Game {
   }
 
   private updateInitialFall(deltaTime: number): void {
-    this.player.vel.y += GameConfig.gravity * deltaTime;
+    this.player.vel.y += GameConfig.initialFallGravity * deltaTime;
     this.player.pos.y += this.player.vel.y * deltaTime;
     if (this.player.pos.y >= this.groundCenterY()) {
       this.beginLanding(false);
@@ -439,98 +441,81 @@ export class Game {
   }
 
   private updateSwing(deltaTime: number): void {
-    const club = GameConfig.club;
-    this.swing.previousAngle = this.swing.angle;
+    if (this.swing.state === "idle" || this.swing.state === "done") return;
 
-    if (this.swing.state === "downswing") {
-      this.swing.elapsed += deltaTime;
-      const progress = clamp(this.swing.elapsed / club.downswingDuration, 0, 1);
-      this.swing.angle = lerp(
-        club.idleAngle,
-        club.downswingEndAngle,
-        easeInCubic(progress),
-      );
+    const swing = GameConfig.swing;
+    this.swing.elapsed = Math.min(swing.duration, this.swing.elapsed + deltaTime);
 
-      if (this.phase === "falling" && !this.swing.connected) {
-        const collisionAngle = this.findClubCollision(
-          this.swing.previousAngle,
-          this.swing.angle,
-        );
-        if (collisionAngle !== null) {
-          this.launchPlayer(collisionAngle);
-        }
-      }
-
-      if (progress >= 1) {
-        this.swing.state = "followThrough";
-        this.swing.elapsed = 0;
-      }
-      return;
-    }
-
-    if (this.swing.state === "followThrough") {
-      this.swing.elapsed += deltaTime;
-      const progress = clamp(this.swing.elapsed / club.followDuration, 0, 1);
-      this.swing.angle = lerp(
-        club.downswingEndAngle,
-        club.followEndAngle,
-        easeOutCubic(progress),
-      );
-      if (progress >= 1) {
-        this.swing.state = "done";
-      }
+    if (this.swing.elapsed >= swing.duration) {
+      this.swing.state = "done";
+    } else if (this.swing.elapsed >= swing.followThroughStart) {
+      this.swing.state = "followThrough";
     }
   }
 
-  private findClubCollision(previousAngle: number, angle: number): number | null {
-    const sampleCount = 8;
-    const playerRadius = Math.hypot(this.player.width / 2, this.player.height / 2);
-    const hitRadius = playerRadius + GameConfig.club.thickness / 2;
+  private tryInitialLaunch(): void {
+    const { launchWindowTopY, launchWindowBottomY } = GameConfig.swing;
+    const playerY = this.player.pos.y;
+    if (playerY < launchWindowTopY || playerY > launchWindowBottomY) return;
 
-    for (let sample = 0; sample <= sampleCount; sample += 1) {
-      const amount = sample / sampleCount;
-      const sampledAngle = lerp(previousAngle, angle, amount);
-      const segment = this.clubActiveSegment(sampledAngle);
-      if (
-        pointToSegmentDistance(this.player.pos, segment.start, segment.end) <= hitRadius
-      ) {
-        return sampledAngle;
-      }
-    }
-    return null;
-  }
-
-  private launchPlayer(collisionAngle: number): void {
-    const mapProgress = clamp(
-      (collisionAngle - GameConfig.club.launchMapStartAngle) /
-        (GameConfig.club.launchMapEndAngle - GameConfig.club.launchMapStartAngle),
-      0,
-      1,
-    );
+    const timingProgress =
+      (playerY - launchWindowTopY) /
+      (launchWindowBottomY - launchWindowTopY);
     const launchAngle = lerp(
-      GameConfig.launchAngleMin,
       GameConfig.launchAngleMax,
-      mapProgress,
+      GameConfig.launchAngleMin,
+      timingProgress,
     );
+
+    this.launchPlayer(launchAngle);
+  }
+
+  private launchPlayer(launchAngle: number): void {
     this.player.vel.x = -Math.cos(launchAngle) * GameConfig.launchSpeed;
     this.player.vel.y = -Math.sin(launchAngle) * GameConfig.launchSpeed;
     this.phase = "airborne";
-    this.swing.connected = true;
     this.resetApproachState();
     this.emitAudio("hit");
   }
 
-  private clubActiveSegment(angle: number): { start: Vec2; end: Vec2 } {
-    const { pivot, length, activeStartRatio } = GameConfig.club;
-    const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+  private batterClubSegment(elapsed: number): { start: Vec2; end: Vec2 } {
+    const frameDuration =
+      GameConfig.swing.duration / GameConfig.swing.frameCount;
+    const framePosition = clamp(
+      elapsed / frameDuration,
+      0,
+      Math.min(3, BatterFrames.length - 1),
+    );
+    const firstIndex = Math.floor(framePosition);
+    const secondIndex = Math.min(firstIndex + 1, 3);
+    const amount = framePosition - firstIndex;
+    const firstFrame = BatterFrames[firstIndex];
+    const secondFrame = BatterFrames[secondIndex];
+    const firstClub = firstFrame.club!;
+    const secondClub = secondFrame.club!;
+
+    const toWorld = (point: Vec2, frame: (typeof BatterFrames)[number]): Vec2 => ({
+      x:
+        GameConfig.hitter.x +
+        ((point.x - frame.anchor.x) * frame.scale) /
+          GameConfig.pixelsPerMeter,
+      y:
+        ((point.y - frame.anchor.y) * frame.scale) /
+        GameConfig.pixelsPerMeter,
+    });
+
+    const firstGrip = toWorld(firstClub.grip, firstFrame);
+    const secondGrip = toWorld(secondClub.grip, secondFrame);
+    const firstHead = toWorld(firstClub.head, firstFrame);
+    const secondHead = toWorld(secondClub.head, secondFrame);
     return {
       start: {
-        x: pivot.x + direction.x * length * activeStartRatio,
-        y: pivot.y + direction.y * length * activeStartRatio,
+        x: lerp(firstGrip.x, secondGrip.x, amount),
+        y: lerp(firstGrip.y, secondGrip.y, amount),
       },
       end: {
-        x: pivot.x + direction.x * length,
-        y: pivot.y + direction.y * length,
+        x: lerp(firstHead.x, secondHead.x, amount),
+        y: lerp(firstHead.y, secondHead.y, amount),
       },
     };
   }
@@ -683,6 +668,7 @@ export class Game {
     switch (pickup.type) {
       case "redPacket":
         this.redPacketCount += 1;
+        this.emitAudio("pickupRedPacket");
         break;
       case "skyLantern":
         this.powerUp.mode = "lantern";
@@ -691,6 +677,7 @@ export class Game {
         this.player.vel.y = -GameConfig.powerUp.lantern.ascentSpeed;
         this.verticalTrackingActive = true;
         this.resetApproachState();
+        this.emitAudio("pickupLantern");
         break;
       case "sixthGenJet":
         this.powerUp.mode = "jet";
@@ -699,6 +686,7 @@ export class Game {
         this.player.vel.y = 0;
         this.verticalTrackingActive = true;
         this.resetApproachState();
+        this.emitAudio("pickupJet");
         break;
     }
   }
@@ -714,6 +702,7 @@ export class Game {
       }
       pickup.status = "attracting";
       this.redPacketCount += 1;
+      this.emitAudio("pickupRedPacket");
     }
   }
 
@@ -979,6 +968,12 @@ export class Game {
       const x = this.worldToScreenX(mine.pos.x);
       if (x < -60 || x > GameConfig.logicalWidth + 60) continue;
       const groundY = this.worldToScreenY(0);
+
+      if (this.sprites) {
+        drawSpritePose(context, this.sprites, MinePose, { x, y: groundY });
+        continue;
+      }
+
       const width = GameConfig.mine.width * GameConfig.pixelsPerMeter;
       const height = GameConfig.mine.height * GameConfig.pixelsPerMeter;
 
@@ -1193,46 +1188,57 @@ export class Game {
   }
 
   private drawHitterAndClub(context: CanvasRenderingContext2D): void {
-    const hitterX = this.worldToScreenX(GameConfig.hitter.x);
+    const hitterAnchor = this.worldToScreen({ x: GameConfig.hitter.x, y: 0 });
+    const hitterX = hitterAnchor.x;
     const width = GameConfig.hitter.width * GameConfig.pixelsPerMeter;
     const height = GameConfig.hitter.height * GameConfig.pixelsPerMeter;
     const hitterY = this.worldToScreenY(0) - height;
     if (hitterX > -200 && hitterX < GameConfig.logicalWidth + 200) {
+      if (this.sprites) {
+        drawSpritePose(
+          context,
+          this.sprites,
+          BatterFrames[this.currentBatterFrameIndex()],
+          hitterAnchor,
+        );
+        return;
+      }
+
       context.fillStyle = GameConfig.palette.hitterEdge;
       context.fillRect(hitterX - width / 2 - 4, hitterY - 4, width + 8, height + 4);
       context.fillStyle = GameConfig.palette.hitter;
       context.fillRect(hitterX - width / 2, hitterY, width, height);
     }
 
-    const pivot = this.worldToScreen(GameConfig.club.pivot);
-    const tip = {
-      x:
-        pivot.x +
-        Math.cos(this.swing.angle) *
-          GameConfig.club.length *
-          GameConfig.pixelsPerMeter,
-      y:
-        pivot.y +
-        Math.sin(this.swing.angle) *
-          GameConfig.club.length *
-          GameConfig.pixelsPerMeter,
-    };
+    const club = this.batterClubSegment(this.swing.elapsed);
+    const grip = this.worldToScreen(club.start);
+    const head = this.worldToScreen(club.end);
     context.strokeStyle = GameConfig.palette.club;
-    context.lineWidth = GameConfig.club.thickness * GameConfig.pixelsPerMeter;
+    context.lineWidth = GameConfig.swing.thickness * GameConfig.pixelsPerMeter;
     context.lineCap = "round";
     context.beginPath();
-    context.moveTo(pivot.x, pivot.y);
-    context.lineTo(tip.x, tip.y);
+    context.moveTo(grip.x, grip.y);
+    context.lineTo(head.x, head.y);
     context.stroke();
 
     context.save();
-    context.translate(tip.x, tip.y);
-    context.rotate(this.swing.angle);
+    context.translate(head.x, head.y);
     context.fillStyle = GameConfig.palette.club;
     context.fillRect(-10, -10, 26, 20);
     context.fillStyle = GameConfig.palette.clubHead;
     context.fillRect(-5, -5, 16, 10);
     context.restore();
+  }
+
+  private currentBatterFrameIndex(): number {
+    if (this.swing.state === "idle") return 0;
+    if (this.swing.state === "done") return BatterFrames.length - 1;
+    const frameDuration =
+      GameConfig.swing.duration / GameConfig.swing.frameCount;
+    return Math.min(
+      BatterFrames.length - 1,
+      Math.floor(this.swing.elapsed / frameDuration),
+    );
   }
 
   private drawPlayer(context: CanvasRenderingContext2D): void {
@@ -1260,12 +1266,21 @@ export class Game {
     context.fill();
 
     if (this.powerUp.mode === "jet") {
-      this.drawJetIcon(
-        context,
-        screen,
-        GameConfig.pickup.sixthGenJet.width * GameConfig.pixelsPerMeter,
-        GameConfig.pickup.sixthGenJet.height * GameConfig.pixelsPerMeter,
-      );
+      if (this.sprites) {
+        drawSpritePose(context, this.sprites, FlyerPoses.jet, screen);
+      } else {
+        this.drawJetIcon(
+          context,
+          screen,
+          GameConfig.pickup.sixthGenJet.width * GameConfig.pixelsPerMeter,
+          GameConfig.pickup.sixthGenJet.height * GameConfig.pixelsPerMeter,
+        );
+      }
+      return;
+    }
+
+    if (this.sprites) {
+      this.drawPlayerSprite(context, screen);
       return;
     }
 
@@ -1302,6 +1317,45 @@ export class Game {
     }
 
     this.drawOriginalPlayer(context, screen, width, height);
+  }
+
+  private drawPlayerSprite(
+    context: CanvasRenderingContext2D,
+    screen: Vec2,
+  ): void {
+    if (!this.sprites) return;
+
+    if (this.powerUp.mode === "lantern") {
+      drawSpritePose(context, this.sprites, FlyerPoses.lantern, screen);
+      return;
+    }
+
+    if (this.phase === "ready" || this.phase === "falling") {
+      drawSpritePose(context, this.sprites, FlyerPoses.falling, screen);
+      return;
+    }
+
+    if (
+      this.phase === "landingGrace" ||
+      this.phase === "sliding" ||
+      this.phase === "ended"
+    ) {
+      drawSpritePose(context, this.sprites, FlyerPoses.sliding, screen);
+      return;
+    }
+
+    const speed = Math.hypot(this.player.vel.x, this.player.vel.y);
+    const rotation =
+      speed <= DISTANCE_EPSILON
+        ? 0
+        : clamp(
+            Math.atan2(-this.player.vel.y, -this.player.vel.x),
+            -Math.PI / 6,
+            Math.PI / 6,
+          );
+    drawSpritePose(context, this.sprites, FlyerPoses.airborne, screen, {
+      rotation,
+    });
   }
 
   private drawOriginalPlayer(

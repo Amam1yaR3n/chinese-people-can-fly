@@ -11,6 +11,7 @@ export const GameConfig = {
   fixedStep: 1 / 120,
   maxFrameDelta: 0.05,
 
+  initialFallGravity: 38,
   gravity: 38,
   launchSpeed: 150,
   launchAngleMin: 15 * DEG,
@@ -26,23 +27,18 @@ export const GameConfig = {
   },
 
   hitter: {
-    x: 18,
+    x: 7.5,
     width: 6,
     height: 16,
   },
 
-  club: {
-    pivot: { x: 16, y: -13 },
-    length: 22,
+  swing: {
+    duration: 0.4,
+    frameCount: 8,
+    followThroughStart: 0.2,
     thickness: 1.2,
-    activeStartRatio: 0.55,
-    idleAngle: -55 * DEG,
-    downswingEndAngle: 190 * DEG,
-    followEndAngle: 230 * DEG,
-    launchMapStartAngle: 140 * DEG,
-    launchMapEndAngle: 190 * DEG,
-    downswingDuration: 0.18,
-    followDuration: 0.22,
+    launchWindowTopY: -28,
+    launchWindowBottomY: -9,
   },
 
   skip: {

@@ -1,0 +1,288 @@
+{
+  "frames": {
+    "batter/swing-01": {
+      "frame": {
+        "x": 8,
+        "y": 8,
+        "w": 408,
+        "h": 672
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 408,
+        "h": 672
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "batter/swing-02": {
+      "frame": {
+        "x": 424,
+        "y": 8,
+        "w": 450,
+        "h": 673
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 450,
+        "h": 673
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "batter/swing-03": {
+      "frame": {
+        "x": 882,
+        "y": 8,
+        "w": 575,
+        "h": 603
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 575,
+        "h": 603
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "batter/swing-04": {
+      "frame": {
+        "x": 1465,
+        "y": 8,
+        "w": 560,
+        "h": 619
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 560,
+        "h": 619
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "batter/swing-05": {
+      "frame": {
+        "x": 8,
+        "y": 689,
+        "w": 567,
+        "h": 707
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 567,
+        "h": 707
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "batter/swing-06": {
+      "frame": {
+        "x": 583,
+        "y": 689,
+        "w": 475,
+        "h": 673
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 475,
+        "h": 673
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "batter/swing-07": {
+      "frame": {
+        "x": 1066,
+        "y": 689,
+        "w": 513,
+        "h": 615
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 513,
+        "h": 615
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "batter/swing-08": {
+      "frame": {
+        "x": 8,
+        "y": 1404,
+        "w": 515,
+        "h": 606
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 515,
+        "h": 606
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "flyer/fly": {
+      "frame": {
+        "x": 531,
+        "y": 1404,
+        "w": 1286,
+        "h": 683
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 1286,
+        "h": 683
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "flyer/lantern": {
+      "frame": {
+        "x": 8,
+        "y": 2095,
+        "w": 254,
+        "h": 812
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 254,
+        "h": 812
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "flyer/belly-slide": {
+      "frame": {
+        "x": 270,
+        "y": 2095,
+        "w": 661,
+        "h": 251
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 661,
+        "h": 251
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "flyer/headfirst-fall": {
+      "frame": {
+        "x": 939,
+        "y": 2095,
+        "w": 270,
+        "h": 585
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 270,
+        "h": 585
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "flyer/jet": {
+      "frame": {
+        "x": 8,
+        "y": 2915,
+        "w": 902,
+        "h": 1069
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 902,
+        "h": 1069
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "obstacles/mine": {
+      "frame": {
+        "x": 918,
+        "y": 2915,
+        "w": 1098,
+        "h": 411
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 1098,
+        "h": 411
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "meta": {
+    "app": "tools/organize_character_art.py",
+    "image": "characters.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 2033,
+      "h": 3992
+    },
+    "scale": "1"
+  },
+  "animations": {
+    "batterSwing": [
+      "batter/swing-01",
+      "batter/swing-02",
+      "batter/swing-03",
+      "batter/swing-04",
+      "batter/swing-05",
+      "batter/swing-06",
+      "batter/swing-07",
+      "batter/swing-08"
+    ],
+    "flyer": {
+      "airborne": "flyer/fly",
+      "lantern": "flyer/lantern",
+      "sliding": "flyer/belly-slide",
+      "falling": "flyer/headfirst-fall",
+      "jet": "flyer/jet"
+    },
+    "obstacles": {
+      "mine": "obstacles/mine"
+    }
+  }
+}
