@@ -78,6 +78,16 @@ export default defineConfig({
           resolve(flyerDirectory, "slingshot-seated.png"),
         );
 
+        const effectDirectory = resolve(
+          import.meta.dirname,
+          "dist/assets/effects",
+        );
+        mkdirSync(effectDirectory, { recursive: true });
+        copyFileSync(
+          resolve(import.meta.dirname, "assets/effects/impact-flash.png"),
+          resolve(effectDirectory, "impact-flash.png"),
+        );
+
         const audioDirectory = resolve(import.meta.dirname, "dist/assets/audio");
         mkdirSync(audioDirectory, { recursive: true });
         for (const audioFile of [
