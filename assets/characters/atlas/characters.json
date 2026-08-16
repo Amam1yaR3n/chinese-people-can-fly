@@ -234,10 +234,46 @@
         "y": 0.5
       }
     },
-    "obstacles/mine": {
+    "flyer/ufo": {
       "frame": {
         "x": 918,
         "y": 2915,
+        "w": 600,
+        "h": 400
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 600,
+        "h": 400
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "flyer/ufo-lights-on": {
+      "frame": {
+        "x": 8,
+        "y": 3992,
+        "w": 600,
+        "h": 400
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 600,
+        "h": 400
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "obstacles/mine": {
+      "frame": {
+        "x": 616,
+        "y": 3992,
         "w": 1098,
         "h": 411
       },
@@ -251,6 +287,24 @@
         "x": 0.5,
         "y": 0.5
       }
+    },
+    "pickups/ufo": {
+      "frame": {
+        "x": 1722,
+        "y": 3992,
+        "w": 264,
+        "h": 168
+      },
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 264,
+        "h": 168
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
     }
   },
   "meta": {
@@ -259,7 +313,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 2033,
-      "h": 3992
+      "h": 4411
     },
     "scale": "1"
   },
@@ -279,10 +333,15 @@
       "lantern": "flyer/lantern",
       "sliding": "flyer/belly-slide",
       "falling": "flyer/headfirst-fall",
-      "jet": "flyer/jet"
+      "jet": "flyer/jet",
+      "ufo": "flyer/ufo",
+      "ufoLightsOn": "flyer/ufo-lights-on"
     },
     "obstacles": {
       "mine": "obstacles/mine"
+    },
+    "pickups": {
+      "ufo": "pickups/ufo"
     }
   }
 }

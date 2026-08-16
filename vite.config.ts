@@ -29,6 +29,55 @@ export default defineConfig({
           resolve(atlasDirectory, "characters.png"),
         );
 
+        const batterDirectory = resolve(
+          import.meta.dirname,
+          "dist/assets/characters/batter",
+        );
+        mkdirSync(batterDirectory, { recursive: true });
+        copyFileSync(
+          resolve(
+            import.meta.dirname,
+            "assets/characters/batter/swing-01.png",
+          ),
+          resolve(batterDirectory, "swing-01.png"),
+        );
+
+        const launcherDirectory = resolve(
+          import.meta.dirname,
+          "dist/assets/characters/launchers",
+        );
+        mkdirSync(launcherDirectory, { recursive: true });
+        for (const launcherFile of [
+          "slingshot.png",
+          "slingshot-frame.png",
+          "human-cannon.png",
+          "human-cannon-loaded-v1.png",
+          "missile-truck.png",
+          "missile-truck-loaded-review-v1.png",
+        ]) {
+          copyFileSync(
+            resolve(
+              import.meta.dirname,
+              "assets/characters/launchers",
+              launcherFile,
+            ),
+            resolve(launcherDirectory, launcherFile),
+          );
+        }
+
+        const flyerDirectory = resolve(
+          import.meta.dirname,
+          "dist/assets/characters/flyer",
+        );
+        mkdirSync(flyerDirectory, { recursive: true });
+        copyFileSync(
+          resolve(
+            import.meta.dirname,
+            "assets/characters/flyer/slingshot-seated.png",
+          ),
+          resolve(flyerDirectory, "slingshot-seated.png"),
+        );
+
         const audioDirectory = resolve(import.meta.dirname, "dist/assets/audio");
         mkdirSync(audioDirectory, { recursive: true });
         for (const audioFile of [

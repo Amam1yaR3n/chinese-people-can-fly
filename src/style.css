@@ -30,6 +30,7 @@ body {
 
 canvas {
   -webkit-tap-highlight-color: transparent;
+  touch-action: none;
 }
 
 #game-shell {
@@ -77,7 +78,14 @@ canvas {
 
 .hud h1 {
   align-self: center;
-  font-size: clamp(14px, 2.1vw, 34px);
+  width: clamp(126px, 14vw, 210px);
+  line-height: 0;
+}
+
+.hud h1 img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .hud output {
@@ -150,7 +158,8 @@ canvas {
 
 .settings-button:focus-visible,
 .settings-close:focus-visible,
-.volume-control input:focus-visible {
+.volume-control input:focus-visible,
+.launcher-card:focus-visible {
   outline: max(3px, 0.22vw) solid #fffdf5;
   outline-offset: max(3px, 0.2vw);
 }
@@ -171,9 +180,13 @@ canvas {
 
 .settings-panel {
   position: relative;
-  width: min(540px, 56%);
-  padding: clamp(20px, 3vw, 44px) clamp(24px, 4vw, 58px)
-    clamp(18px, 2.6vw, 38px);
+  display: grid;
+  grid-template-columns: minmax(0, 36fr) minmax(0, 64fr);
+  align-items: stretch;
+  gap: clamp(18px, 3vw, 48px);
+  width: min(1120px, 100%);
+  max-height: 100%;
+  padding: clamp(16px, 2.6vw, 36px) clamp(18px, 3vw, 48px);
   border: max(3px, 0.3vw) solid #142033;
   border-radius: clamp(18px, 2.4vw, 34px);
   background: #fffdf5;
@@ -184,8 +197,9 @@ canvas {
 
 .settings-close {
   position: absolute;
-  top: clamp(10px, 1.3vw, 20px);
-  right: clamp(10px, 1.3vw, 20px);
+  top: clamp(-14px, -1vw, -9px);
+  right: clamp(-14px, -1vw, -9px);
+  z-index: 1;
   width: clamp(44px, 4vw, 52px);
   aspect-ratio: 1;
   padding: 0 0 0.08em;
@@ -200,12 +214,18 @@ canvas {
   background: #ffbd3f;
 }
 
-.settings-panel h2 {
-  margin: 0;
+.settings-audio {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: clamp(18px, 2.5vw, 40px);
+  border-right: max(2px, 0.16vw) solid #dce8eb;
 }
 
-.settings-panel h2 {
-  font-size: clamp(24px, 3.2vw, 48px);
+.settings-audio h2 {
+  margin: 0;
+  font-size: clamp(22px, 2.8vw, 44px);
   line-height: 1.1;
 }
 
@@ -213,7 +233,7 @@ canvas {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: clamp(7px, 0.8vw, 12px) 16px;
-  margin-top: clamp(18px, 2vw, 30px);
+  margin-top: clamp(14px, 1.8vw, 28px);
   text-align: left;
 }
 
@@ -287,6 +307,123 @@ canvas {
   border-radius: 50%;
   background: #ffbd3f;
   box-shadow: 0 0.1em 0 #142033;
+}
+
+.launcher-picker {
+  display: grid;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: clamp(8px, 1.25vw, 18px);
+}
+
+.launcher-card {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  place-items: center;
+  gap: clamp(2px, 0.4vw, 6px);
+  padding: clamp(6px, 0.8vw, 12px);
+  border: max(3px, 0.24vw) solid #cbd8de;
+  border-radius: clamp(12px, 1.5vw, 22px);
+  background: #fff;
+  color: #142033;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 120ms ease,
+    translate 120ms ease;
+}
+
+.launcher-card:not([aria-disabled="true"]):hover {
+  border-color: #8fa4ae;
+  translate: 0 -2px;
+}
+
+.launcher-card.is-selected,
+.launcher-card.is-selected:hover {
+  border-color: #ffd84d;
+}
+
+.launcher-card[aria-disabled="true"] {
+  cursor: default;
+}
+
+.launcher-card-icon {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+}
+
+.launcher-card-icon img {
+  display: block;
+  width: min(92%, 190px);
+  height: clamp(54px, 8vw, 112px);
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.launcher-card.is-locked .launcher-card-icon img {
+  filter: grayscale(1) brightness(0);
+  opacity: 0.82;
+}
+
+.launcher-card-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(13px, 1.35vw, 20px);
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-card-detail {
+  min-height: 1.15em;
+  color: #657683;
+  font-size: clamp(11px, 1vw, 15px);
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+@media (max-height: 520px) {
+  .settings-overlay {
+    padding: 12px 20px;
+  }
+
+  .settings-panel {
+    gap: clamp(14px, 2.5vw, 28px);
+    padding: 14px 24px;
+  }
+
+  .settings-audio {
+    padding-right: clamp(14px, 2vw, 24px);
+  }
+
+  .settings-audio h2 {
+    font-size: clamp(20px, 2.6vw, 30px);
+  }
+
+  .volume-control {
+    margin-top: clamp(8px, 1.3vw, 14px);
+  }
+
+  .volume-control input {
+    height: 32px;
+  }
+
+  .launcher-card-icon img {
+    height: clamp(46px, 7.5vw, 72px);
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

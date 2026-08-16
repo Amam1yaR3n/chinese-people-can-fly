@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build --config vite.offline.config.ts && vite build",
     "build:offline": "tsc --noEmit && vite build --config vite.offline.config.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:impact": "node tools/verify_impact_effect.mjs",
+    "verify:ufo": "node tools/verify_ufo_gameplay.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
