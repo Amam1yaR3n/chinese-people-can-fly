@@ -16,7 +16,9 @@
       <canvas id="game" width="1600" height="900" aria-label="游戏画面"></canvas>
 
       <header class="hud" aria-live="polite">
-        <h1>中国人能飞</h1>
+        <h1>
+          <img src="./assets/ui/title-logo.png" alt="中国人会飞" />
+        </h1>
         <output id="distance" aria-label="当前最远距离">0 米</output>
         <div class="hud-actions">
           <output id="score" aria-label="当前分数">0 分</output>
@@ -24,7 +26,7 @@
             id="settings-button"
             class="settings-button"
             type="button"
-            aria-label="打开声音设置"
+            aria-label="打开游戏设置"
             aria-controls="settings-dialog"
             aria-expanded="false"
           >
@@ -100,7 +102,7 @@
         class="settings-overlay"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="settings-title"
+        aria-label="游戏设置"
         hidden
       >
         <div class="settings-panel">
@@ -108,37 +110,44 @@
             id="settings-close"
             class="settings-close"
             type="button"
-            aria-label="关闭声音设置"
+            aria-label="关闭游戏设置"
           >
             ×
           </button>
-          <h2 id="settings-title">声音设置</h2>
 
-          <label class="volume-control" for="music-volume">
-            <span>音乐音量</span>
-            <output id="music-volume-value" for="music-volume">48%</output>
-            <input
-              id="music-volume"
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value="48"
-            />
-          </label>
+          <section class="settings-audio" aria-labelledby="settings-audio-title">
+            <h2 id="settings-audio-title">声音设置</h2>
 
-          <label class="volume-control" for="effects-volume">
-            <span>音效音量</span>
-            <output id="effects-volume-value" for="effects-volume">72%</output>
-            <input
-              id="effects-volume"
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value="72"
-            />
-          </label>
+            <label class="volume-control" for="music-volume">
+              <span>音乐音量</span>
+              <output id="music-volume-value" for="music-volume">48%</output>
+              <input
+                id="music-volume"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value="48"
+              />
+            </label>
+
+            <label class="volume-control" for="effects-volume">
+              <span>音效音量</span>
+              <output id="effects-volume-value" for="effects-volume">72%</output>
+              <input
+                id="effects-volume"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value="72"
+              />
+            </label>
+          </section>
+
+          <section class="launcher-picker" aria-label="击球手设置">
+            <div id="launcher-grid" class="launcher-grid"></div>
+          </section>
         </div>
       </section>
 

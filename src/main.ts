@@ -1,7 +1,25 @@
 import { AudioController } from "./game/audio";
 import { GameConfig } from "./game/config";
 import { Game } from "./game/game";
-import { loadCharacterSprites } from "./game/sprites";
+import {
+  LAUNCHERS,
+  isLauncherSelectable,
+  isLauncherUnlocked,
+} from "./game/launchers";
+import {
+  loadProgress,
+  recordCompletedDistance,
+  saveProgress,
+  type ProgressV1,
+} from "./game/progress";
+import {
+  loadCharacterSprites,
+  loadEffectSprites,
+  loadHumanCannonSprites,
+  loadMissileTruckSprites,
+  loadSlingshotSprites,
+} from "./game/sprites";
+import type { Vec2 } from "./game/types";
 
 interface VolumeSettings {
   music: number;
@@ -62,6 +80,7 @@ const settingsDialog = document.querySelector<HTMLElement>("#settings-dialog");
 const settingsClose = document.querySelector<HTMLButtonElement>(
   "#settings-close",
 );
+const launcherGrid = document.querySelector<HTMLElement>("#launcher-grid");
 const musicVolumeInput = document.querySelector<HTMLInputElement>(
   "#music-volume",
 );
@@ -86,6 +105,7 @@ if (
   !settingsButton ||
   !settingsDialog ||
   !settingsClose ||
+  !launcherGrid ||
   !musicVolumeInput ||
   !musicVolumeOutput ||
   !effectsVolumeInput ||
@@ -100,6 +120,7 @@ if (!context) {
 }
 
 const volumeSettings = loadVolumeSettings();
+let progress: ProgressV1 = loadProgress();
 const audio = new AudioController(
   volumeSettings.music / 100,
   volumeSettings.effects / 100,
@@ -112,6 +133,7 @@ let portraitPaused = false;
 let settingsOpen = false;
 let gameEnded = false;
 let musicPreviewTimer: number | null = null;
+let activeLauncherPointerId: number | null = null;
 
 const updateAudioPause = (): void => {
   audio.setPaused(hidden || portraitPaused || settingsOpen || gameEnded);
@@ -127,6 +149,80 @@ const renderVolumeControl = (
   input.style.setProperty("--volume", formatted);
   output.value = formatted;
   output.textContent = formatted;
+};
+
+const releaseLauncherPointerCapture = (pointerId: number): void => {
+  try {
+    if (canvas.hasPointerCapture(pointerId)) {
+      canvas.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // The pointer may already have been released by the browser.
+  }
+};
+
+const cancelActiveLauncherGesture = (): void => {
+  game?.cancelLauncherGesture();
+  if (activeLauncherPointerId !== null) {
+    releaseLauncherPointerCapture(activeLauncherPointerId);
+    activeLauncherPointerId = null;
+  }
+};
+
+const renderLauncherGrid = (): void => {
+  const cards = LAUNCHERS.map((launcher) => {
+    const unlocked = isLauncherUnlocked(launcher, progress.bestDistance);
+    const selectable = isLauncherSelectable(launcher, progress.bestDistance);
+    const selected = launcher.id === progress.selectedLauncher;
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "launcher-card";
+    card.dataset.launcherId = launcher.id;
+    card.classList.toggle("is-locked", !unlocked);
+    card.classList.toggle("is-unavailable", unlocked && !selectable);
+    card.classList.toggle("is-selected", selected);
+    card.setAttribute("aria-pressed", String(selected));
+    card.setAttribute("aria-disabled", String(!selectable));
+    card.setAttribute(
+      "aria-label",
+      unlocked
+        ? `${launcher.name}${selectable ? "" : "，尚不可用"}`
+        : `未解锁，${launcher.unlockDistance} 米解锁`,
+    );
+
+    const iconArea = document.createElement("span");
+    iconArea.className = "launcher-card-icon";
+    const icon = document.createElement("img");
+    icon.src = launcher.iconPath;
+    icon.alt = "";
+    icon.draggable = false;
+    iconArea.append(icon);
+
+    const name = document.createElement("strong");
+    name.className = "launcher-card-name";
+    name.textContent = unlocked ? launcher.name : "？？？";
+
+    const detail = document.createElement("small");
+    detail.className = "launcher-card-detail";
+    detail.textContent = unlocked
+      ? "\u00a0"
+      : `${launcher.unlockDistance}m 解锁`;
+
+    card.append(iconArea, name, detail);
+    card.addEventListener("click", () => {
+      if (!selectable || selected) return;
+      progress = saveProgress({
+        ...progress,
+        selectedLauncher: launcher.id,
+      });
+      game?.setLauncher(progress.selectedLauncher);
+      renderLauncherGrid();
+      updateHud();
+    });
+    return card;
+  });
+
+  launcherGrid.replaceChildren(...cards);
 };
 
 const stopMusicPreview = (): void => {
@@ -150,12 +246,13 @@ const previewMusic = async (): Promise<void> => {
 
 const setSettingsOpen = (open: boolean): void => {
   if (settingsOpen === open) return;
+  if (open) cancelActiveLauncherGesture();
   settingsOpen = open;
   settingsDialog.hidden = !open;
   settingsButton.setAttribute("aria-expanded", String(open));
   settingsButton.setAttribute(
     "aria-label",
-    open ? "关闭声音设置" : "打开声音设置",
+    open ? "关闭游戏设置" : "打开游戏设置",
   );
   document.body.toggleAttribute("data-settings-open", open);
   accumulator = 0;
@@ -180,6 +277,7 @@ renderVolumeControl(
   effectsVolumeOutput,
   volumeSettings.effects,
 );
+renderLauncherGrid();
 
 const resizeCanvas = (): void => {
   const pixelRatio = clampPixelRatio(window.devicePixelRatio || 1);
@@ -200,7 +298,10 @@ const updateOrientationPause = (): void => {
   const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
   portraitPaused = coarsePointer && window.innerHeight > window.innerWidth;
   portraitOverlay.hidden = !portraitPaused;
-  if (portraitPaused) accumulator = 0;
+  if (portraitPaused) {
+    accumulator = 0;
+    cancelActiveLauncherGesture();
+  }
   updateAudioPause();
 };
 
@@ -217,6 +318,13 @@ const updateHud = (): void => {
   if (!game) return;
   const snapshot = game.getSnapshot();
   const endedChanged = gameEnded !== snapshot.ended;
+  if (snapshot.ended && !gameEnded) {
+    const nextProgress = recordCompletedDistance(progress, snapshot.distance);
+    if (nextProgress !== progress) {
+      progress = nextProgress;
+      renderLauncherGrid();
+    }
+  }
   gameEnded = snapshot.ended;
   const formattedDistance = `${snapshot.distance} 米`;
   const formattedScore = `${snapshot.score} 分`;
@@ -238,6 +346,18 @@ const performAction = (): void => {
   updateHud();
 };
 
+const pointerToLogicalPosition = (event: PointerEvent): Vec2 => {
+  const bounds = canvas.getBoundingClientRect();
+  return {
+    x:
+      ((event.clientX - bounds.left) / Math.max(1, bounds.width)) *
+      GameConfig.logicalWidth,
+    y:
+      ((event.clientY - bounds.top) / Math.max(1, bounds.height)) *
+      GameConfig.logicalHeight,
+  };
+};
+
 window.addEventListener(
   "pointerdown",
   (event) => {
@@ -248,11 +368,58 @@ window.addEventListener(
     ) {
       return;
     }
+    if (hidden || portraitPaused || !game) return;
     event.preventDefault();
-    performAction();
+    void audio.unlock();
+    const beganLauncherDrag = game.pointerDown(
+      pointerToLogicalPosition(event),
+    );
+    if (beganLauncherDrag) {
+      activeLauncherPointerId = event.pointerId;
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch {
+        // Window-level move/up handlers still provide a safe fallback.
+      }
+    }
+    updateHud();
   },
   { passive: false },
 );
+
+window.addEventListener(
+  "pointermove",
+  (event) => {
+    if (event.pointerId !== activeLauncherPointerId || !game) return;
+    event.preventDefault();
+    game.pointerMove(pointerToLogicalPosition(event));
+  },
+  { passive: false },
+);
+
+window.addEventListener(
+  "pointerup",
+  (event) => {
+    if (event.pointerId !== activeLauncherPointerId || !game) return;
+    event.preventDefault();
+    game.pointerUp(pointerToLogicalPosition(event));
+    releaseLauncherPointerCapture(event.pointerId);
+    activeLauncherPointerId = null;
+    updateHud();
+  },
+  { passive: false },
+);
+
+window.addEventListener("pointercancel", (event) => {
+  if (event.pointerId !== activeLauncherPointerId) return;
+  cancelActiveLauncherGesture();
+});
+
+canvas.addEventListener("lostpointercapture", (event) => {
+  if (event.pointerId !== activeLauncherPointerId) return;
+  activeLauncherPointerId = null;
+  game?.cancelLauncherGesture();
+});
 
 window.addEventListener("keydown", (event) => {
   if (event.code === "Escape" && settingsOpen) {
@@ -318,6 +485,7 @@ window.addEventListener("resize", resizeCanvas);
 window.addEventListener("orientationchange", resizeCanvas);
 document.addEventListener("visibilitychange", () => {
   hidden = document.hidden;
+  if (hidden) cancelActiveLauncherGesture();
   accumulator = 0;
   lastTimestamp = performance.now();
   updateAudioPause();
@@ -345,8 +513,29 @@ const frame = (timestamp: number): void => {
 };
 
 const startGame = async (): Promise<void> => {
-  const sprites = await loadCharacterSprites();
-  game = new Game((event) => audio.play(event), sprites);
+  const [
+    sprites,
+    slingshotSprites,
+    humanCannonSprites,
+    missileTruckSprites,
+    effectSprites,
+  ] =
+    await Promise.all([
+      loadCharacterSprites(),
+      loadSlingshotSprites(),
+      loadHumanCannonSprites(),
+      loadMissileTruckSprites(),
+      loadEffectSprites(),
+    ]);
+  game = new Game(
+    (event) => audio.play(event),
+    sprites,
+    slingshotSprites,
+    humanCannonSprites,
+    missileTruckSprites,
+    progress.selectedLauncher,
+    effectSprites,
+  );
   lastTimestamp = performance.now();
   resizeCanvas();
   updateHud();

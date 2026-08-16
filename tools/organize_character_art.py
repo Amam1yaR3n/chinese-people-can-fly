@@ -5,7 +5,7 @@ from collections import deque
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,14 +13,16 @@ SOURCE_DIR = ROOT / "assets" / "characters" / "source"
 BATTER_DIR = ROOT / "assets" / "characters" / "batter"
 FLYER_DIR = ROOT / "assets" / "characters" / "flyer"
 OBSTACLE_DIR = ROOT / "assets" / "characters" / "obstacles"
+PICKUP_DIR = ROOT / "assets" / "characters" / "pickups"
 ATLAS_DIR = ROOT / "assets" / "characters" / "atlas"
 
-BATTER_SHEET = SOURCE_DIR / "batter-spritesheet-original.png"
-BATTER_DATA = SOURCE_DIR / "batter-spritesheet-original.json"
-FLYER_FLIGHT = SOURCE_DIR / "flyer-flight-original.png"
-FLYER_POSES = SOURCE_DIR / "flyer-poses-chroma.png"
+BATTER_BLACK_DIR = SOURCE_DIR / "batter-black-final"
+FLYER_GRAY_DIR = SOURCE_DIR / "flyer-gray-final"
 SIXTH_GEN_JET = SOURCE_DIR / "sixth-gen-jet-original.png"
-MINE_SOURCE = SOURCE_DIR / "mine-original.png"
+MINE_SOURCE = SOURCE_DIR / "mine-bold-lines-aligned.png"
+UFO_LIGHTS_OFF_SOURCE = ROOT / "assets" / "concepts" / "ufo-lights-off-review-v1.png"
+UFO_LIGHTS_ON_SOURCE = ROOT / "assets" / "concepts" / "ufo-lights-on-review-v1.png"
+UFO_PICKUP_SOURCE = ROOT / "assets" / "concepts" / "ufo-pickup-review-v3.png"
 
 
 def connected_background_mask(rgb: np.ndarray, seeds: list[tuple[int, int]], threshold: float) -> np.ndarray:
@@ -135,57 +137,174 @@ def trim(image: Image.Image, padding: int = 12) -> Image.Image:
     return image.crop((left, top, right, bottom))
 
 
-def save_sprite(image: Image.Image, path: Path) -> None:
+def save_png_if_changed(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    trim(image).save(path, optimize=True)
+    comparison_image = image.convert("RGBA")
+    if path.exists():
+        with Image.open(path) as existing:
+            existing_rgba = existing.convert("RGBA")
+            if existing_rgba.size == comparison_image.size and np.array_equal(
+                np.asarray(existing_rgba),
+                np.asarray(comparison_image),
+            ):
+                return
+    image.save(path, optimize=True)
+
+
+def save_sprite(image: Image.Image, path: Path) -> None:
+    save_png_if_changed(trim(image), path)
+
+
+def fit_runtime_sprite(
+    image: Image.Image,
+    canvas_size: tuple[int, int],
+    *,
+    alpha_cutoff: int = 8,
+) -> Image.Image:
+    rgba = np.array(image.convert("RGBA"))
+    rgba[rgba[:, :, 3] <= alpha_cutoff, 3] = 0
+    sprite = trim(Image.fromarray(rgba, "RGBA"), padding=0)
+    canvas_width, canvas_height = canvas_size
+    scale = min(canvas_width / sprite.width, canvas_height / sprite.height)
+    shown = sprite.resize(
+        (
+            max(1, round(sprite.width * scale)),
+            max(1, round(sprite.height * scale)),
+        ),
+        Image.Resampling.LANCZOS,
+    )
+    canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+    canvas.alpha_composite(
+        shown,
+        (
+            (canvas_width - shown.width) // 2,
+            (canvas_height - shown.height) // 2,
+        ),
+    )
+    return canvas
+
+
+def fit_aligned_runtime_sprites(
+    images: list[Image.Image],
+    canvas_size: tuple[int, int],
+    *,
+    alpha_cutoff: int = 8,
+) -> list[Image.Image]:
+    if not images:
+        return []
+    source_size = images[0].size
+    if any(image.size != source_size for image in images):
+        raise ValueError("aligned runtime sprites must share a source canvas")
+
+    cleaned: list[Image.Image] = []
+    bounds: list[tuple[int, int, int, int]] = []
+    for image in images:
+        rgba = np.array(image.convert("RGBA"))
+        rgba[rgba[:, :, 3] <= alpha_cutoff, 3] = 0
+        cleaned_image = Image.fromarray(rgba, "RGBA")
+        bbox = cleaned_image.getchannel("A").getbbox()
+        if bbox is None:
+            raise ValueError("sprite contains no visible pixels")
+        cleaned.append(cleaned_image)
+        bounds.append(bbox)
+
+    crop_box = (
+        min(box[0] for box in bounds),
+        min(box[1] for box in bounds),
+        max(box[2] for box in bounds),
+        max(box[3] for box in bounds),
+    )
+    canvas_width, canvas_height = canvas_size
+    crop_width = crop_box[2] - crop_box[0]
+    crop_height = crop_box[3] - crop_box[1]
+    scale = min(canvas_width / crop_width, canvas_height / crop_height)
+    shown_size = (
+        max(1, round(crop_width * scale)),
+        max(1, round(crop_height * scale)),
+    )
+
+    aligned: list[Image.Image] = []
+    for image in cleaned:
+        shown = image.crop(crop_box).resize(shown_size, Image.Resampling.LANCZOS)
+        canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+        canvas.alpha_composite(
+            shown,
+            (
+                (canvas_width - shown.width) // 2,
+                (canvas_height - shown.height) // 2,
+            ),
+        )
+        aligned.append(canvas)
+    return aligned
+
+
+def composite_light_patches(
+    base: Image.Image,
+    lit: Image.Image,
+    centers: list[tuple[int, int]],
+    radius: tuple[int, int],
+) -> Image.Image:
+    mask = Image.new("L", base.size, 0)
+    draw = ImageDraw.Draw(mask)
+    radius_x, radius_y = radius
+    for center_x, center_y in centers:
+        draw.ellipse(
+            (
+                center_x - radius_x,
+                center_y - radius_y,
+                center_x + radius_x,
+                center_y + radius_y,
+            ),
+            fill=255,
+        )
+    mask = mask.filter(ImageFilter.GaussianBlur(2))
+    return Image.composite(lit, base, mask)
 
 
 def extract_batter() -> list[tuple[str, Image.Image]]:
-    data = json.loads(BATTER_DATA.read_text(encoding="utf-8"))
-    sheet = Image.open(BATTER_SHEET).convert("RGBA")
     sprites: list[tuple[str, Image.Image]] = []
-    for index, frame_data in enumerate(data["frames"].values(), start=1):
-        frame = frame_data["frame"]
-        sprite = sheet.crop((frame["x"], frame["y"], frame["x"] + frame["w"], frame["y"] + frame["h"]))
+    for index in range(1, 9):
         name = f"swing-{index:02d}"
-        save_sprite(sprite, BATTER_DIR / f"{name}.png")
-        sprites.append((f"batter/{name}", trim(sprite)))
+        sprite = Image.open(BATTER_BLACK_DIR / f"{name}.png").convert("RGBA")
+        # Preserve the approved replacement canvases verbatim so frame sizes,
+        # anchors, and swing timing remain compatible with the runtime data.
+        save_png_if_changed(sprite, BATTER_DIR / f"{name}.png")
+        sprites.append((f"batter/{name}", sprite))
     return sprites
 
 
 def extract_flyer() -> list[tuple[str, Image.Image]]:
-    flight = make_transparent(
-        FLYER_FLIGHT,
-        threshold=38,
-        crop_boxes=[(0, 0, Image.open(FLYER_FLIGHT).width, Image.open(FLYER_FLIGHT).height)],
-    )[0]
-    pose_source = Image.open(FLYER_POSES)
-    width, height = pose_source.size
-    transparent_sheet = make_transparent(
-        FLYER_POSES,
-        threshold=72,
-        crop_boxes=[(0, 0, width, height)],
-        remove_dominant_green=True,
-    )[0]
-    poses = []
-    ranges = [(0, width // 3), (width // 3, 2 * width // 3), (2 * width // 3, width)]
-    for x_range in ranges:
-        # Isolate by component centroid on the full sheet, then trim its full bounds.
-        # This preserves limbs that extend across a conceptual third boundary.
-        isolated = keep_components(transparent_sheet, minimum_area=900, x_range=x_range)
-        poses.append(isolated)
-    jet = Image.open(SIXTH_GEN_JET).convert("RGBA")
-    named = [
-        ("fly", flight),
-        ("lantern", poses[0]),
-        ("belly-slide", poses[1]),
-        ("headfirst-fall", poses[2]),
-        ("jet", jet),
+    # The replacement art has already been conformed to the legacy canvases and
+    # transparent bounds by prepare_flyer_art.py. Keep those canvases verbatim so
+    # runtime frame sizes, anchors, and scales remain unchanged.
+    gray_poses = [
+        (name, Image.open(FLYER_GRAY_DIR / f"{name}.png").convert("RGBA"))
+        for name in ("fly", "lantern", "belly-slide", "headfirst-fall")
     ]
+    jet = Image.open(SIXTH_GEN_JET).convert("RGBA")
+    ufo, ufo_lights_on = fit_aligned_runtime_sprites(
+        [Image.open(UFO_LIGHTS_OFF_SOURCE), Image.open(UFO_LIGHTS_ON_SOURCE)],
+        (600, 400),
+    )
+    # Only the six approved lamp regions change between runtime frames. Using
+    # the same base airframe prevents subtle shading differences in the review
+    # renders from shimmering during the fast blink animation.
+    ufo_lights_on = composite_light_patches(
+        ufo,
+        ufo_lights_on,
+        [(37, 233), (80, 224), (138, 220), (462, 221), (519, 226), (563, 233)],
+        (24, 22),
+    )
     sprites: list[tuple[str, Image.Image]] = []
-    for name, sprite in named:
-        save_sprite(sprite, FLYER_DIR / f"{name}.png")
-        sprites.append((f"flyer/{name}", trim(sprite)))
+    for name, sprite in gray_poses:
+        save_png_if_changed(sprite, FLYER_DIR / f"{name}.png")
+        sprites.append((f"flyer/{name}", sprite))
+    save_sprite(jet, FLYER_DIR / "jet.png")
+    sprites.append(("flyer/jet", trim(jet)))
+    save_png_if_changed(ufo, FLYER_DIR / "ufo.png")
+    sprites.append(("flyer/ufo", ufo))
+    save_png_if_changed(ufo_lights_on, FLYER_DIR / "ufo-lights-on.png")
+    sprites.append(("flyer/ufo-lights-on", ufo_lights_on))
     return sprites
 
 
@@ -193,6 +312,15 @@ def extract_obstacles() -> list[tuple[str, Image.Image]]:
     mine = Image.open(MINE_SOURCE).convert("RGBA")
     save_sprite(mine, OBSTACLE_DIR / "mine.png")
     return [("obstacles/mine", trim(mine))]
+
+
+def extract_pickups() -> list[tuple[str, Image.Image]]:
+    ufo = fit_runtime_sprite(
+        Image.open(UFO_PICKUP_SOURCE),
+        (264, 168),
+    )
+    save_png_if_changed(ufo, PICKUP_DIR / "ufo.png")
+    return [("pickups/ufo", ufo)]
 
 
 def pack_shelf(sprites: list[tuple[str, Image.Image]], max_width: int = 2048, padding: int = 8) -> dict:
@@ -224,7 +352,7 @@ def pack_shelf(sprites: list[tuple[str, Image.Image]], max_width: int = 2048, pa
             "pivot": {"x": 0.5, "y": 0.5},
         }
     ATLAS_DIR.mkdir(parents=True, exist_ok=True)
-    atlas.save(ATLAS_DIR / "characters.png", optimize=True)
+    save_png_if_changed(atlas, ATLAS_DIR / "characters.png")
     metadata = {
         "frames": frames,
         "meta": {
@@ -242,9 +370,14 @@ def pack_shelf(sprites: list[tuple[str, Image.Image]], max_width: int = 2048, pa
                 "sliding": "flyer/belly-slide",
                 "falling": "flyer/headfirst-fall",
                 "jet": "flyer/jet",
+                "ufo": "flyer/ufo",
+                "ufoLightsOn": "flyer/ufo-lights-on",
             },
             "obstacles": {
                 "mine": "obstacles/mine",
+            },
+            "pickups": {
+                "ufo": "pickups/ufo",
             },
         },
     }
@@ -266,13 +399,13 @@ def make_preview(sprites: list[tuple[str, Image.Image]]) -> None:
         shown = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.Resampling.LANCZOS)
         preview.paste(shown, (x + (thumb_w - shown.width) // 2, y + 8), shown)
         draw.text((x + 10, y + thumb_h - 26), name, fill=(10, 24, 52))
-    preview.save(ATLAS_DIR / "characters-preview.png", optimize=True)
+    save_png_if_changed(preview, ATLAS_DIR / "characters-preview.png")
 
 
 def main() -> None:
-    for directory in (BATTER_DIR, FLYER_DIR, OBSTACLE_DIR, ATLAS_DIR):
+    for directory in (BATTER_DIR, FLYER_DIR, OBSTACLE_DIR, PICKUP_DIR, ATLAS_DIR):
         directory.mkdir(parents=True, exist_ok=True)
-    sprites = extract_batter() + extract_flyer() + extract_obstacles()
+    sprites = extract_batter() + extract_flyer() + extract_obstacles() + extract_pickups()
     metadata = pack_shelf(sprites)
     make_preview(sprites)
     print(f"organized {len(sprites)} sprites into {metadata['meta']['size']}")

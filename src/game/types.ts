@@ -1,3 +1,5 @@
+import type { LauncherId } from "./launchers";
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -13,11 +15,11 @@ export type GamePhase =
 
 export type SwingState = "idle" | "downswing" | "followThrough" | "done";
 
-export type PickupType = "redPacket" | "skyLantern" | "sixthGenJet";
+export type PickupType = "redPacket" | "skyLantern" | "sixthGenJet" | "ufo";
 
 export type PickupStatus = "available" | "attracting" | "collected";
 
-export type PlayerMode = "normal" | "lantern" | "jet";
+export type PlayerMode = "normal" | "lantern" | "jet" | "ufo";
 
 export interface PlayerState {
   pos: Vec2;
@@ -80,4 +82,5 @@ export interface GameSnapshot {
   distance: number;
   score: number;
   ended: boolean;
+  launcherId: LauncherId;
 }

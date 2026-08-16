@@ -1,10 +1,16 @@
 import { GameConfig } from "./config";
+import type { LauncherId } from "./launchers";
 import {
   BatterFrames,
   drawSpritePose,
   FlyerPoses,
   MinePose,
+  PickupPoses,
   type CharacterSprites,
+  type EffectSprites,
+  type HumanCannonSprites,
+  type MissileTruckSprites,
+  type SlingshotSprites,
 } from "./sprites";
 import type {
   AudioEvent,
@@ -29,12 +35,18 @@ const lerp = (from: number, to: number, amount: number): number =>
   from + (to - from) * amount;
 
 const DISTANCE_EPSILON = 1e-7;
+const TIME_EPSILON = 1e-7;
 
 const randomBetween = (
   random: () => number,
   minimum: number,
   maximum: number,
 ): number => minimum + (maximum - minimum) * random();
+
+const stableNoise = (index: number, channel: number): number => {
+  const value = Math.sin(index * 12.9898 + channel * 78.233) * 43_758.5453;
+  return value - Math.floor(value);
+};
 
 const mulberry32 = (seed: number): (() => number) => {
   let state = seed >>> 0;
@@ -74,9 +86,57 @@ interface SwingRuntime {
   elapsed: number;
 }
 
+interface ImpactFlashRuntime {
+  pos: Vec2;
+  life: number;
+  maxLife: number;
+}
+
+interface JetTrailRuntime {
+  startX: number;
+  endX: number;
+  y: number;
+}
+
 interface PowerUpRuntime {
   mode: PlayerMode;
   remainingDistance: number;
+  remainingDuration: number;
+  exitSpeed: number;
+}
+
+interface UfoBeamGeometry {
+  centerX: number;
+  topY: number;
+  groundY: number;
+  topWidth: number;
+  groundWidth: number;
+  topCapHeight: number;
+  groundCapHeight: number;
+}
+
+type SlingshotState =
+  | "idle"
+  | "dragging"
+  | "returning"
+  | "recoil"
+  | "settled";
+
+interface SlingshotRuntime {
+  state: SlingshotState;
+  offset: Vec2;
+  animationStart: Vec2;
+  elapsed: number;
+  atLimit: boolean;
+  limitPulseRemaining: number;
+  pointerGrabOffset: Vec2;
+}
+
+type HumanCannonState = "idle" | "lit" | "fired";
+
+interface HumanCannonRuntime {
+  state: HumanCannonState;
+  elapsed: number;
 }
 
 export class Game {
@@ -87,12 +147,16 @@ export class Game {
   private powerUp: PowerUpRuntime = {
     mode: "normal",
     remainingDistance: 0,
+    remainingDuration: 0,
+    exitSpeed: GameConfig.powerUp.jet.exitSpeed,
   };
   private verticalTrackingActive = false;
   private mines: MineState[] = [];
   private pickups: PickupState[] = [];
   private particles: ParticleState[] = [];
   private explosions: ExplosionState[] = [];
+  private impactFlash: ImpactFlashRuntime | null = null;
+  private jetTrails: JetTrailRuntime[] = [];
   private maxDistance = 0;
   private skipCount = 0;
   private redPacketCount = 0;
@@ -106,10 +170,17 @@ export class Game {
   private mineId = 0;
   private nextPickupDistance: number = GameConfig.pickup.safeDistance;
   private pickupId = 0;
+  private slingshot: SlingshotRuntime = this.createSlingshotRuntime();
+  private humanCannon: HumanCannonRuntime = this.createHumanCannonRuntime();
 
   constructor(
     private readonly emitAudio: (event: AudioEvent) => void,
     private readonly sprites: CharacterSprites | null,
+    private readonly slingshotSprites: SlingshotSprites | null,
+    private readonly humanCannonSprites: HumanCannonSprites | null,
+    private readonly missileTruckSprites: MissileTruckSprites | null,
+    private launcherId: LauncherId,
+    private readonly effectSprites: EffectSprites | null = null,
   ) {
     this.player = this.createPlayer();
     this.swing = this.createSwing();
@@ -126,16 +197,60 @@ export class Game {
         this.skipCount * 5 +
         this.redPacketCount * 50,
       ended: this.phase === "ended",
+      launcherId: this.launcherId,
     };
+  }
+
+  setLauncher(launcherId: LauncherId): void {
+    if (launcherId === this.launcherId) return;
+    this.launcherId = launcherId;
+    this.resetRound(false);
+  }
+
+  pointerDown(position: Vec2): boolean {
+    if (this.launcherId === "slingshot" && this.phase === "ready") {
+      return this.beginSlingshotDrag(position);
+    }
+    this.action();
+    return false;
+  }
+
+  pointerMove(position: Vec2): void {
+    if (this.launcherId !== "slingshot") return;
+    if (this.slingshot.state !== "dragging") return;
+    this.updateSlingshotDrag(position);
+  }
+
+  pointerUp(position: Vec2): void {
+    if (this.launcherId !== "slingshot") return;
+    if (this.slingshot.state !== "dragging") return;
+    this.updateSlingshotDrag(position);
+    this.releaseSlingshot();
+  }
+
+  cancelLauncherGesture(): void {
+    if (
+      this.launcherId === "slingshot" &&
+      this.phase === "ready" &&
+      this.slingshot.state === "dragging"
+    ) {
+      this.startSlingshotReturn();
+    }
   }
 
   action(): void {
     switch (this.phase) {
       case "ready":
-        this.phase = "falling";
+        if (this.launcherId === "blackEagle") {
+          this.phase = "falling";
+        } else if (this.launcherId === "humanCannon") {
+          this.advanceHumanCannon();
+        } else if (this.launcherId === "missileTruck") {
+          this.launchMissileTruck();
+        }
         break;
       case "ended":
-        this.resetRound(true);
+        this.resetRound(false);
         break;
       case "falling":
         if (this.swing.state === "idle") {
@@ -161,6 +276,8 @@ export class Game {
   update(deltaTime: number): void {
     const previousPlayerPosition = { ...this.player.pos };
     this.updateSwing(deltaTime);
+    this.updateSlingshot(deltaTime);
+    this.updateHumanCannon(deltaTime);
 
     switch (this.phase) {
       case "falling":
@@ -180,7 +297,7 @@ export class Game {
         break;
     }
 
-    this.maxDistance = Math.max(this.maxDistance, -this.player.pos.x);
+    this.maxDistance = Math.max(this.maxDistance, this.player.pos.x);
     this.ensureMines(this.maxDistance + GameConfig.mine.generationAhead);
     this.ensurePickups(this.maxDistance + GameConfig.pickup.generationAhead);
     this.updateCamera(deltaTime);
@@ -221,14 +338,40 @@ export class Game {
     };
   }
 
+  private createSlingshotRuntime(): SlingshotRuntime {
+    return {
+      state: "idle",
+      offset: { x: 0, y: 0 },
+      animationStart: { x: 0, y: 0 },
+      elapsed: 0,
+      atLimit: false,
+      limitPulseRemaining: 0,
+      pointerGrabOffset: { x: 0, y: 0 },
+    };
+  }
+
+  private createHumanCannonRuntime(): HumanCannonRuntime {
+    return {
+      state: "idle",
+      elapsed: 0,
+    };
+  }
+
   private resetRound(startImmediately: boolean): void {
-    this.phase = startImmediately ? "falling" : "ready";
+    this.phase =
+      this.launcherId === "blackEagle" && startImmediately
+        ? "falling"
+        : "ready";
     this.player = this.createPlayer();
     this.swing = this.createSwing();
+    this.slingshot = this.createSlingshotRuntime();
+    this.humanCannon = this.createHumanCannonRuntime();
     this.camera = { x: 0, y: 0, shakeTime: 0, shakeStrength: 0 };
     this.powerUp = {
       mode: "normal",
       remainingDistance: 0,
+      remainingDuration: 0,
+      exitSpeed: GameConfig.powerUp.jet.exitSpeed,
     };
     this.verticalTrackingActive = false;
     this.maxDistance = 0;
@@ -241,6 +384,8 @@ export class Game {
     this.skipQueued = false;
     this.particles = [];
     this.explosions = [];
+    this.impactFlash = null;
+    this.jetTrails = [];
     this.mines = [];
     this.pickups = [];
     this.mineId = 0;
@@ -259,8 +404,270 @@ export class Game {
       GameConfig.pickup.safeDistance,
       GameConfig.pickup.firstMaxDistance,
     );
+    if (this.launcherId === "slingshot") {
+      this.syncPlayerToSlingshot();
+    }
     this.ensureMines(GameConfig.mine.generationAhead);
     this.ensurePickups(GameConfig.pickup.generationAhead);
+  }
+
+  private beginSlingshotDrag(position: Vec2): boolean {
+    const pouch = this.slingshotPouchScreen();
+    const seated = this.slingshotSeatedScreen(pouch);
+    const distanceToSeated = Math.hypot(
+      position.x - seated.x,
+      position.y - seated.y,
+    );
+    const distanceToPouch = Math.hypot(
+      position.x - pouch.x,
+      position.y - pouch.y,
+    );
+    if (
+      Math.min(distanceToSeated, distanceToPouch) >
+      GameConfig.slingshot.hotspotRadius
+    ) {
+      return false;
+    }
+
+    this.slingshot.state = "dragging";
+    this.slingshot.elapsed = 0;
+    this.slingshot.animationStart = { ...this.slingshot.offset };
+    this.slingshot.atLimit = false;
+    this.slingshot.pointerGrabOffset = {
+      x: position.x - pouch.x,
+      y: position.y - pouch.y,
+    };
+    this.updateSlingshotDrag(position);
+    return true;
+  }
+
+  private updateSlingshotDrag(position: Vec2): void {
+    const rest = this.worldToScreen(GameConfig.slingshot.restPouchWorld);
+    const desiredPouch = {
+      x: position.x - this.slingshot.pointerGrabOffset.x,
+      y: position.y - this.slingshot.pointerGrabOffset.y,
+    };
+    const rawLaunchX = rest.x - desiredPouch.x;
+    const rawLaunchY = rest.y - desiredPouch.y;
+    const rawDistance = Math.hypot(rawLaunchX, rawLaunchY);
+    const rawAngle = Math.atan2(-rawLaunchY, Math.max(0, rawLaunchX));
+    const launchAngle = clamp(
+      rawAngle,
+      GameConfig.slingshot.minimumAngle,
+      GameConfig.slingshot.maximumAngle,
+    );
+    const pullDistance = Math.min(
+      rawDistance,
+      GameConfig.slingshot.maximumPull,
+    );
+
+    this.slingshot.offset = {
+      x: -Math.cos(launchAngle) * pullDistance,
+      y: Math.sin(launchAngle) * pullDistance,
+    };
+
+    const reachedLimit = rawDistance >= GameConfig.slingshot.maximumPull;
+    if (reachedLimit && !this.slingshot.atLimit) {
+      this.slingshot.limitPulseRemaining =
+        GameConfig.slingshot.limitPulseDuration;
+    }
+    this.slingshot.atLimit = reachedLimit;
+    this.syncPlayerToSlingshot();
+  }
+
+  private releaseSlingshot(): void {
+    const pullDistance = Math.hypot(
+      this.slingshot.offset.x,
+      this.slingshot.offset.y,
+    );
+    if (pullDistance < GameConfig.slingshot.minimumPull) {
+      this.startSlingshotReturn();
+      return;
+    }
+
+    const speedProgress = clamp(
+      (pullDistance - GameConfig.slingshot.minimumPull) /
+        (GameConfig.slingshot.maximumPull -
+          GameConfig.slingshot.minimumPull),
+      0,
+      1,
+    );
+    const launchSpeed = lerp(
+      GameConfig.slingshot.minimumSpeed,
+      GameConfig.slingshot.maximumSpeed,
+      speedProgress,
+    );
+    const launchAngle = Math.atan2(
+      this.slingshot.offset.y,
+      -this.slingshot.offset.x,
+    );
+
+    this.slingshot.state = "recoil";
+    this.slingshot.animationStart = { ...this.slingshot.offset };
+    this.slingshot.elapsed = 0;
+    this.slingshot.atLimit = false;
+    this.launchPlayerWithVelocity({
+      x: Math.cos(launchAngle) * launchSpeed,
+      y: -Math.sin(launchAngle) * launchSpeed,
+    });
+  }
+
+  private startSlingshotReturn(): void {
+    this.slingshot.state = "returning";
+    this.slingshot.animationStart = { ...this.slingshot.offset };
+    this.slingshot.elapsed = 0;
+    this.slingshot.atLimit = false;
+    this.slingshot.limitPulseRemaining = 0;
+  }
+
+  private updateSlingshot(deltaTime: number): void {
+    this.slingshot.limitPulseRemaining = Math.max(
+      0,
+      this.slingshot.limitPulseRemaining - deltaTime,
+    );
+
+    if (this.slingshot.state === "returning") {
+      this.slingshot.elapsed += deltaTime;
+      const progress = clamp(
+        this.slingshot.elapsed /
+          GameConfig.slingshot.cancelReturnDuration,
+        0,
+        1,
+      );
+      const eased = 1 - (1 - progress) ** 3;
+      this.slingshot.offset = {
+        x: this.slingshot.animationStart.x * (1 - eased),
+        y: this.slingshot.animationStart.y * (1 - eased),
+      };
+      this.syncPlayerToSlingshot();
+      if (progress >= 1) {
+        this.slingshot.state = "idle";
+        this.slingshot.offset = { x: 0, y: 0 };
+      }
+      return;
+    }
+
+    if (this.slingshot.state !== "recoil") return;
+
+    this.slingshot.elapsed += deltaTime;
+    const { recoilOvershootDuration, recoilDuration } = GameConfig.slingshot;
+    let factor = 0;
+    if (this.slingshot.elapsed < recoilOvershootDuration) {
+      const progress = clamp(
+        this.slingshot.elapsed / recoilOvershootDuration,
+        0,
+        1,
+      );
+      const eased = 1 - (1 - progress) ** 3;
+      factor = lerp(1, -0.14, eased);
+    } else {
+      const progress = clamp(
+        (this.slingshot.elapsed - recoilOvershootDuration) /
+          (recoilDuration - recoilOvershootDuration),
+        0,
+        1,
+      );
+      factor = -0.14 * (1 - progress) * Math.cos(progress * Math.PI * 4);
+    }
+    this.slingshot.offset = {
+      x: this.slingshot.animationStart.x * factor,
+      y: this.slingshot.animationStart.y * factor,
+    };
+
+    if (this.slingshot.elapsed >= recoilDuration) {
+      this.slingshot.state = "settled";
+      this.slingshot.offset = { x: 0, y: 0 };
+    }
+  }
+
+  private syncPlayerToSlingshot(): void {
+    const { restPouchWorld, seatedOffset } = GameConfig.slingshot;
+    this.player.pos = {
+      x:
+        restPouchWorld.x +
+        (this.slingshot.offset.x + seatedOffset.x) /
+          GameConfig.pixelsPerMeter,
+      y:
+        restPouchWorld.y +
+        (this.slingshot.offset.y + seatedOffset.y) /
+          GameConfig.pixelsPerMeter,
+    };
+    this.player.vel = { x: 0, y: 0 };
+  }
+
+  private slingshotPouchScreen(): Vec2 {
+    const rest = this.worldToScreen(GameConfig.slingshot.restPouchWorld);
+    const jitter = this.slingshotLimitJitter();
+    return {
+      x: rest.x + this.slingshot.offset.x,
+      y: rest.y + this.slingshot.offset.y + jitter,
+    };
+  }
+
+  private slingshotSeatedScreen(pouch: Vec2): Vec2 {
+    return {
+      x: pouch.x + GameConfig.slingshot.seatedOffset.x,
+      y: pouch.y + GameConfig.slingshot.seatedOffset.y,
+    };
+  }
+
+  private slingshotLimitJitter(): number {
+    const duration = GameConfig.slingshot.limitPulseDuration;
+    if (this.slingshot.limitPulseRemaining <= 0 || duration <= 0) return 0;
+    const elapsed = duration - this.slingshot.limitPulseRemaining;
+    return (
+      Math.sin(elapsed * Math.PI * 50) *
+      3 *
+      (this.slingshot.limitPulseRemaining / duration)
+    );
+  }
+
+  private advanceHumanCannon(): void {
+    if (this.humanCannon.state === "idle") {
+      this.humanCannon.state = "lit";
+      this.humanCannon.elapsed = 0;
+      return;
+    }
+
+    if (this.humanCannon.state !== "lit") return;
+
+    const { launchAngle, minimumSpeed, maximumSpeed, muzzleWorld } =
+      GameConfig.humanCannon;
+    const launchSpeed = lerp(
+      minimumSpeed,
+      maximumSpeed,
+      this.humanCannonPower(),
+    );
+    this.humanCannon.state = "fired";
+    this.humanCannon.elapsed = 0;
+    this.player.pos = { ...muzzleWorld };
+    this.launchPlayerWithVelocity({
+      x: Math.cos(launchAngle) * launchSpeed,
+      y: -Math.sin(launchAngle) * launchSpeed,
+    });
+  }
+
+  private updateHumanCannon(deltaTime: number): void {
+    if (this.humanCannon.state === "idle") return;
+    this.humanCannon.elapsed += deltaTime;
+  }
+
+  private humanCannonPower(): number {
+    if (this.humanCannon.state !== "lit") return 0;
+    const duration = GameConfig.humanCannon.sweepDuration;
+    const leg = Math.floor(this.humanCannon.elapsed / duration);
+    const legProgress =
+      (this.humanCannon.elapsed - leg * duration) / duration;
+    return leg % 2 === 0 ? legProgress : 1 - legProgress;
+  }
+
+  private launchMissileTruck(): void {
+    const { launchAngle, launchSpeed, launchWorld } = GameConfig.missileTruck;
+    this.player.pos = { ...launchWorld };
+    this.launchPlayerWithVelocity({
+      x: Math.cos(launchAngle) * launchSpeed,
+      y: -Math.sin(launchAngle) * launchSpeed,
+    });
   }
 
   private updateInitialFall(deltaTime: number): void {
@@ -280,7 +687,15 @@ export class Game {
       this.updateJetFlight(deltaTime);
       return;
     }
+    if (this.powerUp.mode === "ufo") {
+      this.updateUfoFlight(deltaTime);
+      return;
+    }
 
+    this.updateNormalAirborne(deltaTime);
+  }
+
+  private updateNormalAirborne(deltaTime: number): void {
     this.player.vel.y += GameConfig.gravity * deltaTime;
     this.player.pos.x += this.player.vel.x * deltaTime;
     this.player.pos.y += this.player.vel.y * deltaTime;
@@ -311,18 +726,47 @@ export class Game {
   }
 
   private updateJetFlight(deltaTime: number): void {
-    const { speed } = GameConfig.powerUp.jet;
-    const travel = Math.min(speed * deltaTime, this.powerUp.remainingDistance);
-    this.player.pos.x -= travel;
-    this.player.vel.x = -speed;
+    const activeTime = Math.min(deltaTime, this.powerUp.remainingDuration);
+    this.player.pos.x += this.player.vel.x * activeTime;
     this.player.vel.y = 0;
-    this.powerUp.remainingDistance -= travel;
+    this.powerUp.remainingDuration -= activeTime;
+    const activeTrail = this.jetTrails.at(-1);
+    if (activeTrail) {
+      activeTrail.endX =
+        this.player.pos.x -
+        GameConfig.powerUp.jet.trailExhaustOffsetX /
+          GameConfig.pixelsPerMeter;
+    }
 
-    if (this.powerUp.remainingDistance <= DISTANCE_EPSILON) {
+    if (this.powerUp.remainingDuration <= TIME_EPSILON) {
       this.powerUp.mode = "normal";
-      this.powerUp.remainingDistance = 0;
-      this.player.vel.x = -GameConfig.powerUp.jet.exitSpeed;
+      this.powerUp.remainingDuration = 0;
+      this.player.vel.x = this.powerUp.exitSpeed;
       this.player.vel.y = 0;
+
+      const normalTime = deltaTime - activeTime;
+      if (normalTime > TIME_EPSILON) {
+        this.updateNormalAirborne(normalTime);
+      }
+    }
+  }
+
+  private updateUfoFlight(deltaTime: number): void {
+    const activeTime = Math.min(deltaTime, this.powerUp.remainingDuration);
+    this.player.pos.x += this.player.vel.x * activeTime;
+    this.player.vel.y = 0;
+    this.powerUp.remainingDuration -= activeTime;
+
+    if (this.powerUp.remainingDuration <= TIME_EPSILON) {
+      this.powerUp.mode = "normal";
+      this.powerUp.remainingDuration = 0;
+      this.player.vel.x = this.powerUp.exitSpeed;
+      this.player.vel.y = 0;
+
+      const normalTime = deltaTime - activeTime;
+      if (normalTime > TIME_EPSILON) {
+        this.updateNormalAirborne(normalTime);
+      }
     }
   }
 
@@ -471,8 +915,25 @@ export class Game {
   }
 
   private launchPlayer(launchAngle: number): void {
-    this.player.vel.x = -Math.cos(launchAngle) * GameConfig.launchSpeed;
-    this.player.vel.y = -Math.sin(launchAngle) * GameConfig.launchSpeed;
+    this.launchPlayerWithVelocity({
+      x: Math.cos(launchAngle) * GameConfig.launchSpeed,
+      y: -Math.sin(launchAngle) * GameConfig.launchSpeed,
+    });
+  }
+
+  private launchPlayerWithVelocity(velocity: Vec2): void {
+    if (this.launcherId === "blackEagle") {
+      const clubHead = this.batterClubSegment(this.swing.elapsed).end;
+      this.impactFlash = {
+        pos: {
+          x: lerp(clubHead.x, this.player.pos.x, 0.4),
+          y: lerp(clubHead.y, this.player.pos.y, 0.4),
+        },
+        life: GameConfig.swing.impactFlashDuration,
+        maxLife: GameConfig.swing.impactFlashDuration,
+      };
+    }
+    this.player.vel = { ...velocity };
     this.phase = "airborne";
     this.resetApproachState();
     this.emitAudio("hit");
@@ -497,7 +958,7 @@ export class Game {
     const toWorld = (point: Vec2, frame: (typeof BatterFrames)[number]): Vec2 => ({
       x:
         GameConfig.hitter.x +
-        ((point.x - frame.anchor.x) * frame.scale) /
+        ((frame.anchor.x - point.x) * frame.scale) /
           GameConfig.pixelsPerMeter,
       y:
         ((point.y - frame.anchor.y) * frame.scale) /
@@ -540,7 +1001,7 @@ export class Game {
   private triggerMine(mine: MineState): void {
     mine.exploded = true;
     this.player.pos.y = Math.min(this.player.pos.y, this.groundCenterY() - 0.1);
-    this.player.vel.x = -Math.max(
+    this.player.vel.x = Math.max(
       Math.abs(this.player.vel.x || this.impactVelocity.x) *
         GameConfig.mine.horizontalMultiplier,
       GameConfig.mine.minimumHorizontalBoost,
@@ -560,7 +1021,7 @@ export class Game {
       this.mines.push({
         id: this.mineId,
         distance,
-        pos: { x: -distance, y: -GameConfig.mine.height / 2 },
+        pos: { x: distance, y: -GameConfig.mine.height / 2 },
         exploded: false,
       });
       this.mineId += 1;
@@ -587,7 +1048,7 @@ export class Game {
         id: this.pickupId,
         type,
         distance: this.nextPickupDistance,
-        pos: { x: -this.nextPickupDistance, y: -altitude },
+        pos: { x: this.nextPickupDistance, y: -altitude },
         status: "available",
       });
       this.pickupId += 1;
@@ -602,13 +1063,15 @@ export class Game {
   private choosePickupType(): PickupType {
     const roll = this.random();
     if (roll < GameConfig.pickup.redPacket.weight) return "redPacket";
-    if (
-      roll <
-      GameConfig.pickup.redPacket.weight + GameConfig.pickup.skyLantern.weight
-    ) {
+    const lanternThreshold =
+      GameConfig.pickup.redPacket.weight + GameConfig.pickup.skyLantern.weight;
+    if (roll < lanternThreshold) {
       return "skyLantern";
     }
-    return "sixthGenJet";
+    const jetThreshold =
+      lanternThreshold + GameConfig.pickup.sixthGenJet.weight;
+    if (roll < jetThreshold) return "sixthGenJet";
+    return "ufo";
   }
 
   private getPickupConfig(type: PickupType) {
@@ -619,6 +1082,8 @@ export class Game {
         return GameConfig.pickup.skyLantern;
       case "sixthGenJet":
         return GameConfig.pickup.sixthGenJet;
+      case "ufo":
+        return GameConfig.pickup.ufo;
     }
   }
 
@@ -629,13 +1094,15 @@ export class Game {
     if (this.phase === "airborne") {
       for (const pickup of this.pickups) {
         if (pickup.status !== "available") continue;
+        const highSpeedTransformation =
+          this.powerUp.mode === "jet" || this.powerUp.mode === "ufo";
         if (
-          this.powerUp.mode === "jet" &&
+          highSpeedTransformation &&
           pickup.type !== "redPacket"
         ) {
           continue;
         }
-        if (this.powerUp.mode === "jet" && pickup.type === "redPacket") {
+        if (this.powerUp.mode === "ufo" && pickup.type === "redPacket") {
           continue;
         }
         if (
@@ -649,7 +1116,7 @@ export class Game {
         }
       }
 
-      if (this.powerUp.mode === "jet") {
+      if (this.powerUp.mode === "ufo") {
         this.lockVisibleRedPackets();
       }
     }
@@ -674,19 +1141,55 @@ export class Game {
         this.powerUp.mode = "lantern";
         this.powerUp.remainingDistance =
           GameConfig.powerUp.lantern.ascentDistance;
+        this.powerUp.remainingDuration = 0;
         this.player.vel.y = -GameConfig.powerUp.lantern.ascentSpeed;
         this.verticalTrackingActive = true;
         this.resetApproachState();
         this.emitAudio("pickupLantern");
         break;
       case "sixthGenJet":
+        this.powerUp.exitSpeed = Math.max(
+          this.player.vel.x,
+          GameConfig.powerUp.jet.exitSpeed,
+        );
         this.powerUp.mode = "jet";
-        this.powerUp.remainingDistance = GameConfig.powerUp.jet.travelDistance;
-        this.player.vel.x = -GameConfig.powerUp.jet.speed;
+        this.powerUp.remainingDistance = 0;
+        this.powerUp.remainingDuration = GameConfig.powerUp.jet.duration;
+        {
+          const exhaustX =
+            this.player.pos.x -
+            GameConfig.powerUp.jet.trailExhaustOffsetX /
+              GameConfig.pixelsPerMeter;
+          this.jetTrails.push({
+            startX: exhaustX,
+            endX: exhaustX,
+            y: this.player.pos.y,
+          });
+        }
+        this.player.vel.x = Math.max(
+          this.player.vel.x,
+          GameConfig.powerUp.jet.speed,
+        );
         this.player.vel.y = 0;
         this.verticalTrackingActive = true;
         this.resetApproachState();
         this.emitAudio("pickupJet");
+        break;
+      case "ufo":
+        this.powerUp.exitSpeed = Math.max(
+          this.player.vel.x,
+          GameConfig.powerUp.ufo.exitSpeed,
+        );
+        this.powerUp.mode = "ufo";
+        this.powerUp.remainingDistance = 0;
+        this.powerUp.remainingDuration = GameConfig.powerUp.ufo.duration;
+        this.player.vel.x = Math.max(
+          this.player.vel.x,
+          GameConfig.powerUp.ufo.speed,
+        );
+        this.player.vel.y = 0;
+        this.verticalTrackingActive = true;
+        this.resetApproachState();
         break;
     }
   }
@@ -723,22 +1226,30 @@ export class Game {
 
   private updateAttractingRedPackets(deltaTime: number): void {
     const travel = GameConfig.pickup.magnetSpeed * deltaTime;
+    const target = this.ufoEmitterWorldPosition();
     for (const pickup of this.pickups) {
       if (pickup.status !== "attracting") continue;
-      const offsetX = this.player.pos.x - pickup.pos.x;
-      const offsetY = this.player.pos.y - pickup.pos.y;
+      const offsetX = target.x - pickup.pos.x;
+      const offsetY = target.y - pickup.pos.y;
       const distance = Math.hypot(offsetX, offsetY);
       if (
         distance <= GameConfig.pickup.magnetCollectDistance ||
         travel >= distance
       ) {
-        pickup.pos = { ...this.player.pos };
+        pickup.pos = { ...target };
         pickup.status = "collected";
         continue;
       }
       pickup.pos.x += (offsetX / distance) * travel;
       pickup.pos.y += (offsetY / distance) * travel;
     }
+  }
+
+  private ufoEmitterWorldPosition(): Vec2 {
+    return {
+      x: this.player.pos.x,
+      y: this.player.pos.y + GameConfig.powerUp.ufo.emitterOffsetY,
+    };
   }
 
   private clearDistanceSign(distance: number): number {
@@ -791,6 +1302,13 @@ export class Game {
     }
     this.explosions = this.explosions.filter((explosion) => explosion.life > 0);
 
+    if (this.impactFlash) {
+      this.impactFlash.life -= deltaTime;
+      if (this.impactFlash.life <= 0) {
+        this.impactFlash = null;
+      }
+    }
+
     this.camera.shakeTime = Math.max(0, this.camera.shakeTime - deltaTime);
   }
 
@@ -799,14 +1317,14 @@ export class Game {
     const playerScreenX =
       GameConfig.worldAnchorScreenX +
       (this.player.pos.x - this.camera.x) * pixelsPerMeter;
-    if (playerScreenX < GameConfig.followScreenX) {
+    if (playerScreenX > GameConfig.followScreenX) {
       const desiredCameraX =
         this.player.pos.x +
         (GameConfig.worldAnchorScreenX - GameConfig.followScreenX) /
           pixelsPerMeter;
       const followRate = GameConfig.camera.followRate;
       // Feed the horizontal velocity into the target. A plain smooth interpolation
-      // always trails a moving target, pushing the player left of the intended
+      // always trails a moving target, pushing the player right of the intended
       // anchor; this term cancels that steady-state lag while keeping the onset soft.
       const velocityCompensatedTarget =
         desiredCameraX + this.player.vel.x / followRate;
@@ -816,7 +1334,7 @@ export class Game {
         velocityCompensatedTarget,
         smoothing,
       );
-      this.camera.x = Math.min(this.camera.x, nextCameraX);
+      this.camera.x = Math.max(this.camera.x, nextCameraX);
     }
 
     if (this.powerUp.mode !== "normal") {
@@ -866,12 +1384,22 @@ export class Game {
   private drawSky(context: CanvasRenderingContext2D): void {
     context.fillStyle = GameConfig.palette.sun;
     context.beginPath();
-    context.arc(180, 155, 58, 0, Math.PI * 2);
+    context.arc(GameConfig.logicalWidth - 180, 155, 58, 0, Math.PI * 2);
     context.fill();
 
     context.fillStyle = `${GameConfig.palette.cloud}cc`;
-    this.drawCloud(context, 410 - this.camera.x * 0.32, 170, 1);
-    this.drawCloud(context, 1090 - this.camera.x * 0.2, 290, 0.72);
+    this.drawCloud(
+      context,
+      GameConfig.logicalWidth - 410 - this.camera.x * 0.32,
+      170,
+      1,
+    );
+    this.drawCloud(
+      context,
+      GameConfig.logicalWidth - 1090 - this.camera.x * 0.2,
+      290,
+      0.72,
+    );
   }
 
   private drawCloud(
@@ -883,7 +1411,7 @@ export class Game {
     const wrappedX = ((x + 260) % 1860 + 1860) % 1860 - 260;
     context.save();
     context.translate(wrappedX, y);
-    context.scale(scale, scale);
+    context.scale(-scale, scale);
     context.beginPath();
     context.arc(0, 0, 34, Math.PI, 0);
     context.arc(52, -18, 52, Math.PI, 0);
@@ -899,10 +1427,724 @@ export class Game {
     this.drawGround(context);
     this.drawDistanceSigns(context);
     this.drawMines(context);
+    this.drawJetTrails(context);
+    this.drawUfoTractorBeam(context);
     this.drawPickups(context);
-    this.drawHitterAndClub(context);
+    if (this.launcherId === "blackEagle") {
+      this.drawHitterAndClub(context);
+    } else if (this.launcherId === "slingshot") {
+      this.drawSlingshotScene(context);
+    } else if (this.launcherId === "humanCannon") {
+      this.drawHumanCannonScene(context);
+    } else if (this.launcherId === "missileTruck") {
+      this.drawMissileTruckScene(context);
+    }
     this.drawEffects(context);
-    this.drawPlayer(context);
+    const playerIsLoaded =
+      (this.launcherId === "slingshot" ||
+        this.launcherId === "humanCannon" ||
+        this.launcherId === "missileTruck") &&
+      this.phase === "ready";
+    if (!playerIsLoaded) {
+      this.drawPlayer(context);
+    }
+    this.drawImpactFlash(context);
+  }
+
+  private ufoBeamGeometry(): UfoBeamGeometry | null {
+    if (this.powerUp.mode !== "ufo") return null;
+
+    const emitter = this.worldToScreen(this.ufoEmitterWorldPosition());
+    const groundY = this.worldToScreenY(0);
+    // Let the beam tuck underneath the emitter so the foreground UFO masks the
+    // seam. This keeps the two shapes connected even while the camera moves.
+    const topY = emitter.y - 2;
+    const beamHeight = groundY - topY;
+    if (beamHeight <= 0) return null;
+
+    const topWidth =
+      GameConfig.powerUp.ufo.beamTopWidth * GameConfig.pixelsPerMeter;
+    return {
+      centerX: emitter.x,
+      topY,
+      groundY,
+      topWidth,
+      groundWidth:
+        topWidth +
+        Math.tan(GameConfig.powerUp.ufo.beamSpreadAngle) * beamHeight * 2,
+      topCapHeight:
+        GameConfig.powerUp.ufo.beamTopCapHeight * GameConfig.pixelsPerMeter,
+      groundCapHeight:
+        GameConfig.powerUp.ufo.beamGroundCapHeight * GameConfig.pixelsPerMeter,
+    };
+  }
+
+  private drawUfoTractorBeam(context: CanvasRenderingContext2D): void {
+    const beam = this.ufoBeamGeometry();
+    if (!beam) return;
+
+    const {
+      centerX,
+      topY,
+      groundY,
+      topWidth,
+      groundWidth,
+      topCapHeight,
+      groundCapHeight,
+    } = beam;
+    context.save();
+
+    // Semi-transparent, flat color blocks follow the approved concept while
+    // the geometry stretches to the actual ground instead of a fixed height.
+    context.fillStyle = "rgb(226 248 255 / 24%)";
+    context.beginPath();
+    context.moveTo(centerX - topWidth / 2, topY);
+    context.lineTo(centerX - groundWidth / 2, groundY);
+    context.lineTo(centerX + groundWidth / 2, groundY);
+    context.lineTo(centerX + topWidth / 2, topY);
+    context.closePath();
+    context.fill();
+
+    const coreTopWidth = topWidth * 0.32;
+    const coreGroundWidth = topWidth * 0.68;
+    context.fillStyle = "rgb(91 229 247 / 20%)";
+    context.beginPath();
+    context.moveTo(centerX - coreTopWidth / 2, topY);
+    context.lineTo(centerX - coreGroundWidth / 2, groundY);
+    context.lineTo(centerX + coreGroundWidth / 2, groundY);
+    context.lineTo(centerX + coreTopWidth / 2, topY);
+    context.closePath();
+    context.fill();
+
+    context.fillStyle = "rgb(199 248 255 / 38%)";
+    context.beginPath();
+    context.ellipse(
+      centerX,
+      topY,
+      topWidth / 2,
+      topCapHeight / 2,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+
+    context.fillStyle = "rgb(218 249 249 / 28%)";
+    context.beginPath();
+    context.ellipse(
+      centerX,
+      groundY,
+      groundWidth / 2,
+      groundCapHeight / 2,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+    context.restore();
+  }
+
+  private ufoLightsOn(): boolean {
+    if (this.powerUp.mode !== "ufo") return false;
+    const elapsed =
+      GameConfig.powerUp.ufo.duration - this.powerUp.remainingDuration;
+    return (
+      Math.floor(elapsed / GameConfig.powerUp.ufo.lightBlinkInterval) % 2 ===
+      0
+    );
+  }
+
+  private drawHumanCannonScene(context: CanvasRenderingContext2D): void {
+    const {
+      launchAngle,
+      loadedAnchor,
+      emptyAnchor,
+      recoilDistance,
+      recoilDuration,
+      spriteScale,
+      wheelWorld,
+    } = GameConfig.humanCannon;
+    const wheel = this.worldToScreen(wheelWorld);
+    let recoilOffset: Vec2 = { x: 0, y: 0 };
+
+    if (
+      this.humanCannon.state === "fired" &&
+      this.humanCannon.elapsed < recoilDuration
+    ) {
+      const progress = clamp(
+        this.humanCannon.elapsed / recoilDuration,
+        0,
+        1,
+      );
+      const amount =
+        Math.sin(progress * Math.PI) *
+        (1 - progress * 0.35) *
+        recoilDistance;
+      recoilOffset = {
+        x: -Math.cos(launchAngle) * amount,
+        y: Math.sin(launchAngle) * amount,
+      };
+    }
+
+    context.save();
+    context.translate(wheel.x + recoilOffset.x, wheel.y + recoilOffset.y);
+    if (this.humanCannonSprites) {
+      const loaded = this.phase === "ready";
+      const image = loaded
+        ? this.humanCannonSprites.loaded
+        : this.humanCannonSprites.empty;
+      const anchor = loaded ? loadedAnchor : emptyAnchor;
+      context.drawImage(
+        image,
+        -anchor.x * spriteScale,
+        -anchor.y * spriteScale,
+        image.width * spriteScale,
+        image.height * spriteScale,
+      );
+    } else {
+      this.drawHumanCannonFallback(context);
+    }
+    context.restore();
+
+    if (this.phase === "ready" && this.humanCannon.state === "lit") {
+      this.drawHumanCannonFuse(context);
+      this.drawHumanCannonPowerBar(context);
+    }
+
+    if (this.humanCannon.state === "fired") {
+      this.drawHumanCannonSmoke(context, recoilOffset);
+    }
+  }
+
+  private drawMissileTruckScene(context: CanvasRenderingContext2D): void {
+    const {
+      emptyAnchor,
+      emptyScale,
+      groundWorld,
+      loadedAnchor,
+      loadedScale,
+      loadedWorld,
+      rackAngle,
+    } = GameConfig.missileTruck;
+    const ground = this.worldToScreen(groundWorld);
+
+    if (this.missileTruckSprites) {
+      const loaded = this.phase === "ready";
+      const image = loaded
+        ? this.missileTruckSprites.loaded
+        : this.missileTruckSprites.empty;
+      const anchor = loaded ? loadedAnchor : emptyAnchor;
+      const scale = loaded ? loadedScale : emptyScale;
+      context.drawImage(
+        image,
+        ground.x - anchor.x * scale,
+        ground.y - anchor.y * scale,
+        image.width * scale,
+        image.height * scale,
+      );
+      return;
+    }
+
+    this.drawMissileTruckFallback(context, ground);
+    if (this.phase !== "ready") return;
+
+    const loaded = this.worldToScreen(loadedWorld);
+    if (this.sprites) {
+      drawSpritePose(context, this.sprites, FlyerPoses.airborne, loaded, {
+        rotation: -rackAngle,
+        flipX: true,
+      });
+      return;
+    }
+
+    context.save();
+    context.translate(loaded.x, loaded.y);
+    context.rotate(-rackAngle);
+    this.drawOriginalPlayer(
+      context,
+      { x: 0, y: 0 },
+      this.player.width * GameConfig.pixelsPerMeter,
+      this.player.height * GameConfig.pixelsPerMeter,
+    );
+    context.restore();
+  }
+
+  private drawMissileTruckFallback(
+    context: CanvasRenderingContext2D,
+    ground: Vec2,
+  ): void {
+    context.save();
+    context.translate(ground.x, ground.y);
+    context.fillStyle = "#7f8b32";
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 7;
+    context.lineJoin = "round";
+    context.fillRect(-48, -78, 250, 62);
+    context.strokeRect(-48, -78, 250, 62);
+    context.save();
+    context.translate(-20, -82);
+    context.rotate(-GameConfig.missileTruck.launchAngle);
+    context.fillRect(0, -16, 180, 32);
+    context.strokeRect(0, -16, 180, 32);
+    context.restore();
+    for (const x of [-18, 58, 138]) {
+      context.fillStyle = "#303744";
+      context.beginPath();
+      context.arc(x, -12, 30, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+    }
+    context.restore();
+  }
+
+  private drawHumanCannonFallback(
+    context: CanvasRenderingContext2D,
+  ): void {
+    const { launchAngle } = GameConfig.humanCannon;
+    context.save();
+    context.rotate(-launchAngle);
+    context.fillStyle = "#555c68";
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 10;
+    context.beginPath();
+    context.roundRect(-148, -70, 300, 82, 28);
+    context.fill();
+    context.stroke();
+    context.fillStyle = "#7b8490";
+    context.beginPath();
+    context.roundRect(130, -82, 38, 106, 16);
+    context.fill();
+    context.stroke();
+    context.restore();
+
+    context.fillStyle = "#f4a63f";
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 10;
+    context.beginPath();
+    context.arc(0, 0, 92, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.fillStyle = "#555c68";
+    context.beginPath();
+    context.arc(0, 0, 20, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+
+  private drawHumanCannonFuse(
+    context: CanvasRenderingContext2D,
+  ): void {
+    const tip = this.worldToScreen(GameConfig.humanCannon.fuseWorld);
+    const pulse = (Math.sin(this.humanCannon.elapsed * 22) + 1) / 2;
+    const size = 18 + pulse * 4;
+    context.save();
+    context.translate(tip.x, tip.y);
+    context.fillStyle = "#ff5a1f";
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 4;
+    context.beginPath();
+    context.moveTo(0, -size);
+    context.bezierCurveTo(size * 0.7, -size * 0.35, size * 0.55, size * 0.6, 0, size * 0.72);
+    context.bezierCurveTo(-size * 0.55, size * 0.6, -size * 0.7, -size * 0.35, 0, -size);
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.fillStyle = "#ffe04a";
+    context.beginPath();
+    context.ellipse(0, 1, size * 0.26, size * 0.48, 0, 0, Math.PI * 2);
+    context.fill();
+
+    context.fillStyle = "#ffc83d";
+    for (let index = 0; index < 3; index += 1) {
+      const angle = this.humanCannon.elapsed * 6 + index * (Math.PI * 2 / 3);
+      const distance = 23 + (index % 2) * 5;
+      context.beginPath();
+      context.arc(
+        Math.cos(angle) * distance,
+        Math.sin(angle) * distance - 5,
+        3,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+    }
+    context.restore();
+  }
+
+  private drawHumanCannonPowerBar(
+    context: CanvasRenderingContext2D,
+  ): void {
+    const {
+      powerBarHeight,
+      powerBarWidth,
+      powerBarWorld,
+    } = GameConfig.humanCannon;
+    const screen = this.worldToScreen(powerBarWorld);
+    const power = this.humanCannonPower();
+    const inset = 10;
+    const indicatorX =
+      -powerBarWidth / 2 + inset + power * (powerBarWidth - inset * 2);
+
+    context.save();
+    context.translate(screen.x, screen.y);
+    const gradient = context.createLinearGradient(
+      -powerBarWidth / 2,
+      0,
+      powerBarWidth / 2,
+      0,
+    );
+    gradient.addColorStop(0, "#e3343f");
+    gradient.addColorStop(0.52, "#ffd447");
+    gradient.addColorStop(1, "#35b86b");
+    context.fillStyle = gradient;
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 6;
+    context.beginPath();
+    context.roundRect(
+      -powerBarWidth / 2,
+      -powerBarHeight / 2,
+      powerBarWidth,
+      powerBarHeight,
+      13,
+    );
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = "#fffdf5";
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 5;
+    context.beginPath();
+    context.roundRect(
+      indicatorX - 7,
+      -powerBarHeight / 2 - 8,
+      14,
+      powerBarHeight + 16,
+      6,
+    );
+    context.fill();
+    context.stroke();
+    context.restore();
+  }
+
+  private drawHumanCannonSmoke(
+    context: CanvasRenderingContext2D,
+    recoilOffset: Vec2,
+  ): void {
+    const { launchAngle, muzzleWorld, smokeDuration } =
+      GameConfig.humanCannon;
+    if (this.humanCannon.elapsed >= smokeDuration) return;
+    const progress = clamp(
+      this.humanCannon.elapsed / smokeDuration,
+      0,
+      1,
+    );
+    const muzzle = this.worldToScreen(muzzleWorld);
+    const forward = { x: Math.cos(launchAngle), y: -Math.sin(launchAngle) };
+
+    context.save();
+    context.translate(
+      muzzle.x + recoilOffset.x,
+      muzzle.y + recoilOffset.y,
+    );
+    context.globalAlpha = 1 - progress;
+    for (let index = 0; index < 5; index += 1) {
+      const travel = progress * (38 + index * 13);
+      const spread = (index - 2) * (5 + progress * 8);
+      const x = forward.x * travel - forward.y * spread;
+      const y = forward.y * travel + forward.x * spread;
+      context.fillStyle = index % 2 === 0 ? "#fffdf5" : "#dce8eb";
+      context.strokeStyle = GameConfig.palette.ink;
+      context.lineWidth = Math.max(1.5, 4 * (1 - progress));
+      context.beginPath();
+      context.arc(x, y, 10 + progress * 22 + index * 2, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+    }
+    context.restore();
+  }
+
+  private drawSlingshotScene(context: CanvasRenderingContext2D): void {
+    const pouch = this.slingshotPouchScreen();
+    const seated = this.slingshotSeatedScreen(pouch);
+    const backTipBase = this.worldToScreen(
+      GameConfig.slingshot.backTipWorld,
+    );
+    const frontTipBase = this.worldToScreen(
+      GameConfig.slingshot.frontTipWorld,
+    );
+    const backTip = backTipBase;
+    const frontTip = frontTipBase;
+    const tension = clamp(
+      Math.hypot(this.slingshot.offset.x, this.slingshot.offset.y) /
+        GameConfig.slingshot.maximumPull,
+      0,
+      1,
+    );
+    const { pouchWidth, pouchHeight } = GameConfig.slingshot;
+    const backBandStart = { x: backTip.x - 15, y: backTip.y + 3 };
+    const frontBandStart = { x: frontTip.x - 15, y: frontTip.y - 3 };
+    const pouchAttachX = pouch.x + pouchWidth * 0.38;
+
+    this.drawSlingshotFrame(context);
+    this.drawSlingshotBand(
+      context,
+      backBandStart,
+      { x: pouchAttachX, y: pouch.y + pouchHeight * 0.2 },
+      tension,
+    );
+    this.drawSlingshotKnot(context, backTip, backBandStart, false);
+
+    if (this.phase === "ready") {
+      this.drawSlingshotSeatedFlyer(context, seated);
+    }
+
+    this.drawSlingshotPouch(context, pouch);
+    this.drawSlingshotBand(
+      context,
+      frontBandStart,
+      { x: pouchAttachX, y: pouch.y - pouchHeight * 0.2 },
+      tension,
+    );
+    this.drawSlingshotKnot(context, frontTip, frontBandStart, true);
+  }
+
+  private drawSlingshotFrame(context: CanvasRenderingContext2D): void {
+    const base = this.worldToScreen({
+      x: GameConfig.slingshot.forkWorldX,
+      y: 0,
+    });
+    const size = GameConfig.slingshot.frameSize;
+
+    if (!this.slingshotSprites) {
+      const backTip = this.worldToScreen(GameConfig.slingshot.backTipWorld);
+      const frontTip = this.worldToScreen(GameConfig.slingshot.frontTipWorld);
+      context.strokeStyle = "#142033";
+      context.lineWidth = 42;
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.beginPath();
+      context.moveTo(base.x, base.y);
+      context.lineTo(base.x, base.y - size * 0.4);
+      context.lineTo(backTip.x, backTip.y);
+      context.moveTo(base.x, base.y - size * 0.4);
+      context.lineTo(frontTip.x, frontTip.y);
+      context.stroke();
+      context.strokeStyle = "#f4a63f";
+      context.lineWidth = 30;
+      context.stroke();
+      return;
+    }
+
+    const image = this.slingshotSprites.frame;
+    const left = base.x - size / 2;
+    const top = base.y - size + size * 0.042;
+    const splitRatio = GameConfig.slingshot.frameTopSliceRatio;
+    const overlapRatio = 0.025;
+    const bottomSourceY = Math.floor(
+      image.height * (splitRatio - overlapRatio),
+    );
+    const topSourceHeight = Math.ceil(
+      image.height * (splitRatio + overlapRatio),
+    );
+    const bottomDestinationY = size * (splitRatio - overlapRatio);
+    const topDestinationHeight = size * (splitRatio + overlapRatio);
+
+    context.drawImage(
+      image,
+      0,
+      bottomSourceY,
+      image.width,
+      image.height - bottomSourceY,
+      left,
+      top + bottomDestinationY,
+      size,
+      size - bottomDestinationY,
+    );
+    context.drawImage(
+      image,
+      0,
+      0,
+      image.width,
+      topSourceHeight,
+      left,
+      top,
+      size,
+      topDestinationHeight,
+    );
+  }
+
+  private drawSlingshotBand(
+    context: CanvasRenderingContext2D,
+    start: Vec2,
+    end: Vec2,
+    tension: number,
+  ): void {
+    const midpoint = {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2 + (1 - tension) * 18,
+    };
+    const red = Math.round(143 + (239 - 143) * tension);
+    const green = Math.round(29 + (51 - 29) * tension);
+    const blue = Math.round(44 + (64 - 44) * tension);
+
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 14 - tension * 2;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(start.x, start.y);
+    context.quadraticCurveTo(midpoint.x, midpoint.y, end.x, end.y);
+    context.stroke();
+
+    context.strokeStyle = `rgb(${red} ${green} ${blue})`;
+    context.lineWidth = 8 - tension * 1.5;
+    context.beginPath();
+    context.moveTo(start.x, start.y);
+    context.quadraticCurveTo(midpoint.x, midpoint.y, end.x, end.y);
+    context.stroke();
+  }
+
+  private drawSlingshotKnot(
+    context: CanvasRenderingContext2D,
+    connection: Vec2,
+    bandExit: Vec2,
+    front: boolean,
+  ): void {
+    context.save();
+    context.translate(connection.x, connection.y);
+    context.rotate(front ? -0.04 : 0.04);
+    context.fillStyle = "#c52f3e";
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 4;
+    context.lineJoin = "round";
+
+    context.beginPath();
+    context.roundRect(-13, -8, 26, 16, 7);
+    context.fill();
+    context.stroke();
+
+    const localExit = {
+      x: bandExit.x - connection.x,
+      y: bandExit.y - connection.y,
+    };
+    context.beginPath();
+    context.moveTo(-7, -6);
+    context.bezierCurveTo(
+      localExit.x - 5,
+      localExit.y - 6,
+      localExit.x - 8,
+      localExit.y + 1,
+      localExit.x - 3,
+      localExit.y + 5,
+    );
+    context.bezierCurveTo(-13, 10, -7, 5, -4, 2);
+    context.closePath();
+    context.fill();
+    context.stroke();
+
+    context.strokeStyle = "#f35a64";
+    context.lineWidth = 2.5;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(-8, -3);
+    context.lineTo(8, -3);
+    context.moveTo(-7, 3);
+    context.lineTo(7, 3);
+    context.stroke();
+    context.restore();
+  }
+
+  private drawSlingshotSeatedFlyer(
+    context: CanvasRenderingContext2D,
+    seated: Vec2,
+  ): void {
+    const tilt = clamp(
+      this.slingshot.offset.y / GameConfig.slingshot.maximumPull,
+      -1,
+      1,
+    ) * GameConfig.slingshot.maximumSeatedTilt;
+    const size = GameConfig.slingshot.seatedSize;
+
+    context.save();
+    context.translate(seated.x, seated.y);
+    context.rotate(tilt);
+    if (this.slingshotSprites) {
+      context.drawImage(
+        this.slingshotSprites.seatedFlyer,
+        -size / 2,
+        -size / 2,
+        size,
+        size,
+      );
+    } else {
+      context.fillStyle = "#17191f";
+      context.strokeStyle = GameConfig.palette.ink;
+      context.lineWidth = 5;
+      context.beginPath();
+      context.arc(0, -46, 22, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      context.fillRect(-22, -24, 44, 58);
+      context.fillStyle = "#fffdf5";
+      context.fillRect(-2, 24, 56, 22);
+    }
+    context.restore();
+  }
+
+  private drawSlingshotPouch(
+    context: CanvasRenderingContext2D,
+    pouch: Vec2,
+  ): void {
+    const { pouchWidth, pouchHeight, maximumPull } = GameConfig.slingshot;
+    const rotation =
+      clamp(this.slingshot.offset.y / maximumPull, -1, 1) * 0.12;
+    context.save();
+    context.translate(pouch.x, pouch.y);
+    context.rotate(rotation);
+    context.fillStyle = "#5b321f";
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 5;
+    context.beginPath();
+    context.roundRect(
+      -pouchWidth / 2,
+      -pouchHeight / 2,
+      pouchWidth,
+      pouchHeight,
+      13,
+    );
+    context.fill();
+
+    context.save();
+    context.clip();
+    context.strokeStyle = "#9a6440";
+    context.lineWidth = 2.5;
+    for (let x = -pouchWidth; x <= pouchWidth; x += 16) {
+      context.beginPath();
+      context.moveTo(x, -pouchHeight / 2);
+      context.lineTo(x + pouchHeight, pouchHeight / 2);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(x, pouchHeight / 2);
+      context.lineTo(x + pouchHeight, -pouchHeight / 2);
+      context.stroke();
+    }
+    context.restore();
+
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 5;
+    context.beginPath();
+    context.roundRect(
+      -pouchWidth / 2,
+      -pouchHeight / 2,
+      pouchWidth,
+      pouchHeight,
+      13,
+    );
+    context.stroke();
+    context.fillStyle = "#2f1d19";
+    context.beginPath();
+    context.ellipse(0, -pouchHeight * 0.3, pouchWidth * 0.34, 5, 0, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
   }
 
   private drawGround(context: CanvasRenderingContext2D): void {
@@ -934,8 +2176,8 @@ export class Game {
   private drawDistanceSigns(context: CanvasRenderingContext2D): void {
     const leftWorld = this.screenToWorldX(-100);
     const rightWorld = this.screenToWorldX(GameConfig.logicalWidth + 100);
-    const maximumDistance = Math.max(0, -leftWorld);
-    const minimumDistance = Math.max(100, -rightWorld);
+    const minimumDistance = Math.max(100, leftWorld);
+    const maximumDistance = Math.max(0, rightWorld);
     const first =
       Math.ceil(minimumDistance / GameConfig.signs.interval) *
       GameConfig.signs.interval;
@@ -945,7 +2187,7 @@ export class Game {
       distance <= maximumDistance;
       distance += GameConfig.signs.interval
     ) {
-      const x = this.worldToScreenX(-distance);
+      const x = this.worldToScreenX(distance);
       const groundY = this.worldToScreenY(0);
       context.fillStyle = GameConfig.palette.ink;
       context.fillRect(x - 5, groundY - 72, 10, 72);
@@ -1030,6 +2272,13 @@ export class Game {
           break;
         case "sixthGenJet":
           this.drawJetIcon(context, screen, width, height);
+          break;
+        case "ufo":
+          if (this.sprites) {
+            drawSpritePose(context, this.sprites, PickupPoses.ufo, screen);
+          } else {
+            this.drawUfoIcon(context, screen, width, height, false);
+          }
           break;
       }
     }
@@ -1140,6 +2389,7 @@ export class Game {
   ): void {
     context.save();
     context.translate(screen.x, screen.y);
+    context.scale(-1, 1);
     context.lineJoin = "round";
     this.traceJet(context, width, height);
     context.fillStyle = GameConfig.palette.jet;
@@ -1187,6 +2437,130 @@ export class Game {
     context.closePath();
   }
 
+  private drawUfoIcon(
+    context: CanvasRenderingContext2D,
+    screen: Vec2,
+    width: number,
+    height: number,
+    showPilot: boolean,
+    lightsOn = true,
+  ): void {
+    const { palette } = GameConfig;
+    const outline = Math.max(2, width * 0.035);
+    context.save();
+    context.translate(screen.x, screen.y);
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.strokeStyle = palette.ink;
+    context.lineWidth = outline;
+
+    context.fillStyle = palette.ufo;
+    context.beginPath();
+    context.moveTo(-width * 0.48, -height * 0.02);
+    context.quadraticCurveTo(-width * 0.32, -height * 0.2, -width * 0.2, -height * 0.2);
+    context.lineTo(-width * 0.12, -height * 0.43);
+    context.quadraticCurveTo(0, -height * 0.5, width * 0.12, -height * 0.43);
+    context.lineTo(width * 0.2, -height * 0.2);
+    context.quadraticCurveTo(width * 0.32, -height * 0.2, width * 0.48, -height * 0.02);
+    context.quadraticCurveTo(width * 0.4, height * 0.3, 0, height * 0.38);
+    context.quadraticCurveTo(-width * 0.4, height * 0.3, -width * 0.48, -height * 0.02);
+    context.closePath();
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = lightsOn ? palette.ufoLight : palette.ufoDark;
+    for (const lightX of [-0.36, -0.22, -0.08, 0.08, 0.22, 0.36]) {
+      const x = width * lightX;
+      const y = height * (0.015 + Math.abs(lightX) * 0.08);
+      context.beginPath();
+      context.arc(x, y, Math.max(1.6, height * 0.027), 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = palette.ink;
+      context.lineWidth = Math.max(1, outline * 0.35);
+      context.stroke();
+    }
+
+    context.strokeStyle = palette.ufoLight;
+    context.lineWidth = Math.max(3, height * 0.09);
+    context.beginPath();
+    context.moveTo(-width * 0.43, 0);
+    context.quadraticCurveTo(0, height * 0.09, width * 0.43, 0);
+    context.stroke();
+
+    const screenWidth = width * 0.22;
+    const screenHeight = height * 0.25;
+    const screenY = -height * 0.29;
+    context.fillStyle = palette.ufoScreen;
+    context.strokeStyle = palette.ink;
+    context.lineWidth = outline * 0.75;
+    context.beginPath();
+    context.roundRect(
+      -screenWidth / 2,
+      screenY - screenHeight / 2,
+      screenWidth,
+      screenHeight,
+      Math.max(2, screenHeight * 0.18),
+    );
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = palette.ufoDark;
+    context.beginPath();
+    context.ellipse(
+      0,
+      height * 0.3,
+      width * 0.12,
+      height * 0.11,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+    context.stroke();
+    context.strokeStyle = palette.ufoLight;
+    context.lineWidth = Math.max(2, height * 0.055);
+    context.beginPath();
+    context.ellipse(
+      0,
+      height * 0.3,
+      width * 0.08,
+      height * 0.065,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    context.stroke();
+
+    if (showPilot) {
+      context.save();
+      context.beginPath();
+      context.roundRect(
+        -screenWidth / 2 + outline,
+        screenY - screenHeight / 2 + outline,
+        screenWidth - outline * 2,
+        screenHeight - outline * 2,
+        Math.max(1, screenHeight * 0.1),
+      );
+      context.clip();
+      context.fillStyle = "#8f96a8";
+      context.beginPath();
+      context.ellipse(0, screenY + screenHeight * 0.55, screenWidth * 0.42, screenHeight * 0.42, 0, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = "#ffd0ad";
+      context.beginPath();
+      context.arc(0, screenY, screenHeight * 0.28, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = palette.ink;
+      context.beginPath();
+      context.arc(0, screenY - screenHeight * 0.1, screenHeight * 0.29, Math.PI, Math.PI * 2);
+      context.fill();
+      context.fillRect(-screenWidth * 0.27, screenY - screenHeight * 0.04, screenWidth * 0.54, screenHeight * 0.13);
+      context.restore();
+    }
+
+    context.restore();
+  }
+
   private drawHitterAndClub(context: CanvasRenderingContext2D): void {
     const hitterAnchor = this.worldToScreen({ x: GameConfig.hitter.x, y: 0 });
     const hitterX = hitterAnchor.x;
@@ -1200,6 +2574,7 @@ export class Game {
           this.sprites,
           BatterFrames[this.currentBatterFrameIndex()],
           hitterAnchor,
+          { flipX: true },
         );
         return;
       }
@@ -1248,7 +2623,9 @@ export class Game {
     const heightAboveGround = Math.max(0, -this.player.pos.y - this.player.height / 2);
     const shadowScale = clamp(1 - heightAboveGround / 100, 0.18, 1);
     const shadowWidth =
-      this.powerUp.mode === "jet"
+      this.powerUp.mode === "ufo"
+        ? GameConfig.powerUp.ufo.displayWidth * GameConfig.pixelsPerMeter
+        : this.powerUp.mode === "jet"
         ? GameConfig.pickup.sixthGenJet.width * GameConfig.pixelsPerMeter
         : width;
 
@@ -1265,9 +2642,33 @@ export class Game {
     );
     context.fill();
 
+    if (this.powerUp.mode === "ufo") {
+      const lightsOn = this.ufoLightsOn();
+      if (this.sprites) {
+        drawSpritePose(
+          context,
+          this.sprites,
+          lightsOn ? FlyerPoses.ufoLightsOn : FlyerPoses.ufo,
+          screen,
+        );
+      } else {
+        this.drawUfoIcon(
+          context,
+          screen,
+          GameConfig.powerUp.ufo.displayWidth * GameConfig.pixelsPerMeter,
+          GameConfig.powerUp.ufo.displayHeight * GameConfig.pixelsPerMeter,
+          true,
+          lightsOn,
+        );
+      }
+      return;
+    }
+
     if (this.powerUp.mode === "jet") {
       if (this.sprites) {
-        drawSpritePose(context, this.sprites, FlyerPoses.jet, screen);
+        drawSpritePose(context, this.sprites, FlyerPoses.jet, screen, {
+          flipX: true,
+        });
       } else {
         this.drawJetIcon(
           context,
@@ -1319,6 +2720,107 @@ export class Game {
     this.drawOriginalPlayer(context, screen, width, height);
   }
 
+  private drawJetTrails(context: CanvasRenderingContext2D): void {
+    if (this.jetTrails.length === 0) return;
+
+    const {
+      trailEngineOffsetY,
+      trailWidth,
+      trailPuffSpacing,
+      trailPuffRadius,
+    } = GameConfig.powerUp.jet;
+    const engineOffsetWorld =
+      trailEngineOffsetY / GameConfig.pixelsPerMeter;
+    const puffSpacingWorld =
+      trailPuffSpacing / GameConfig.pixelsPerMeter;
+    const visibleWorldStart = this.screenToWorldX(-trailPuffRadius * 3);
+    const visibleWorldEnd = this.screenToWorldX(
+      GameConfig.logicalWidth + trailPuffRadius * 3,
+    );
+
+    context.save();
+    context.strokeStyle = "rgb(255 255 255 / 56%)";
+    context.lineWidth = trailWidth;
+    context.lineCap = "round";
+    context.shadowColor = "rgb(255 255 255 / 72%)";
+    context.shadowBlur = 5;
+    context.beginPath();
+    for (const trail of this.jetTrails) {
+      const startX = this.worldToScreenX(trail.startX);
+      const endX = this.worldToScreenX(trail.endX);
+      for (const offsetY of [-engineOffsetWorld, engineOffsetWorld]) {
+        const y = this.worldToScreenY(trail.y + offsetY);
+        context.moveTo(startX, y);
+        context.lineTo(endX, y);
+      }
+    }
+    context.stroke();
+    context.shadowBlur = 0;
+    context.fillStyle = GameConfig.palette.cloud;
+
+    for (let trailIndex = 0; trailIndex < this.jetTrails.length; trailIndex += 1) {
+      const trail = this.jetTrails[trailIndex];
+      const firstVisibleX = Math.max(trail.startX, visibleWorldStart);
+      const lastVisibleX = Math.min(trail.endX, visibleWorldEnd);
+      if (firstVisibleX > lastVisibleX) continue;
+
+      const firstPuffIndex = Math.ceil(firstVisibleX / puffSpacingWorld);
+      const lastPuffIndex = Math.floor(lastVisibleX / puffSpacingWorld);
+      for (const engineIndex of [-1, 1]) {
+        const centerY = this.worldToScreenY(
+          trail.y + engineOffsetWorld * engineIndex,
+        );
+        for (
+          let puffIndex = firstPuffIndex;
+          puffIndex <= lastPuffIndex;
+          puffIndex += 1
+        ) {
+          const channel = trailIndex * 11 + (engineIndex + 1) * 3;
+          const xNoise = stableNoise(puffIndex, channel);
+          const yNoise = stableNoise(puffIndex, channel + 1);
+          const sizeNoise = stableNoise(puffIndex, channel + 2);
+          const alphaNoise = stableNoise(puffIndex, channel + 3);
+          const puffX =
+            this.worldToScreenX(puffIndex * puffSpacingWorld) +
+            (xNoise - 0.5) * trailPuffSpacing * 0.65;
+          const puffY =
+            centerY + (yNoise - 0.5) * trailPuffRadius * 0.9;
+          const radiusX = trailPuffRadius * (0.8 + sizeNoise * 0.8);
+          const radiusY = trailPuffRadius * (0.48 + sizeNoise * 0.42);
+
+          context.globalAlpha = 0.48 + alphaNoise * 0.38;
+          context.beginPath();
+          context.ellipse(
+            puffX,
+            puffY,
+            radiusX,
+            radiusY,
+            (yNoise - 0.5) * 0.32,
+            0,
+            Math.PI * 2,
+          );
+          context.fill();
+
+          if (puffIndex % 2 === 0) {
+            context.globalAlpha *= 0.48;
+            context.beginPath();
+            context.ellipse(
+              puffX - radiusX * 0.18,
+              puffY + (yNoise - 0.5) * trailPuffRadius * 1.25,
+              radiusX * 0.62,
+              radiusY * 0.7,
+              0,
+              0,
+              Math.PI * 2,
+            );
+            context.fill();
+          }
+        }
+      }
+    }
+    context.restore();
+  }
+
   private drawPlayerSprite(
     context: CanvasRenderingContext2D,
     screen: Vec2,
@@ -1326,12 +2828,16 @@ export class Game {
     if (!this.sprites) return;
 
     if (this.powerUp.mode === "lantern") {
-      drawSpritePose(context, this.sprites, FlyerPoses.lantern, screen);
+      drawSpritePose(context, this.sprites, FlyerPoses.lantern, screen, {
+        flipX: true,
+      });
       return;
     }
 
     if (this.phase === "ready" || this.phase === "falling") {
-      drawSpritePose(context, this.sprites, FlyerPoses.falling, screen);
+      drawSpritePose(context, this.sprites, FlyerPoses.falling, screen, {
+        flipX: true,
+      });
       return;
     }
 
@@ -1340,7 +2846,9 @@ export class Game {
       this.phase === "sliding" ||
       this.phase === "ended"
     ) {
-      drawSpritePose(context, this.sprites, FlyerPoses.sliding, screen);
+      drawSpritePose(context, this.sprites, FlyerPoses.sliding, screen, {
+        flipX: true,
+      });
       return;
     }
 
@@ -1349,12 +2857,13 @@ export class Game {
       speed <= DISTANCE_EPSILON
         ? 0
         : clamp(
-            Math.atan2(-this.player.vel.y, -this.player.vel.x),
+            Math.atan2(this.player.vel.y, this.player.vel.x),
             -Math.PI / 6,
             Math.PI / 6,
           );
     drawSpritePose(context, this.sprites, FlyerPoses.airborne, screen, {
       rotation,
+      flipX: true,
     });
   }
 
@@ -1407,6 +2916,65 @@ export class Game {
       context.fill();
       context.restore();
     }
+  }
+
+  private drawImpactFlash(context: CanvasRenderingContext2D): void {
+    const flash = this.impactFlash;
+    if (!flash) return;
+
+    const progress = clamp(1 - flash.life / flash.maxLife, 0, 1);
+    const fade = progress < 0.58 ? 1 : (1 - progress) / 0.42;
+    const scale = 0.82 + Math.min(1, progress / 0.18) * 0.18;
+    const outerRadius = GameConfig.swing.impactFlashRadius * scale;
+    const innerRadius = outerRadius * 0.56;
+    const screen = this.worldToScreen(flash.pos);
+    const spikeScale = [
+      1, 0.56, 0.78, 0.48, 0.9, 0.6, 0.72, 0.5, 0.96, 0.58,
+      0.76, 0.46, 0.86, 0.62, 0.7, 0.52, 0.92, 0.6, 0.74, 0.5,
+    ];
+
+    context.save();
+    context.translate(screen.x, screen.y);
+    context.globalAlpha = clamp(fade, 0, 1);
+
+    if (this.effectSprites) {
+      const diameter = outerRadius * 2;
+      context.drawImage(
+        this.effectSprites.impactFlash,
+        -diameter / 2,
+        -diameter / 2,
+        diameter,
+        diameter,
+      );
+      context.restore();
+      return;
+    }
+
+    context.rotate(-Math.PI / 16);
+    context.fillStyle = GameConfig.palette.cloud;
+    context.strokeStyle = GameConfig.palette.ink;
+    context.lineWidth = 3;
+    context.lineJoin = "miter";
+    context.beginPath();
+    for (let index = 0; index < 40; index += 1) {
+      const spikeIndex = Math.floor(index / 2);
+      const radius =
+        index % 2 === 0
+          ? outerRadius * spikeScale[spikeIndex]
+          : innerRadius;
+      const angle = (index / 40) * Math.PI * 2;
+      const x = Math.cos(angle) * radius * 0.72;
+      const y = Math.sin(angle) * radius;
+      if (index === 0) {
+        context.moveTo(x, y);
+      } else {
+        context.lineTo(x, y);
+      }
+    }
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.restore();
   }
 
   private worldToScreen(position: Vec2): Vec2 {

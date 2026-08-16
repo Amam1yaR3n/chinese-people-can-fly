@@ -4,6 +4,25 @@ export interface CharacterSprites {
   readonly image: HTMLImageElement;
 }
 
+export interface SlingshotSprites {
+  readonly frame: HTMLImageElement;
+  readonly seatedFlyer: HTMLImageElement;
+}
+
+export interface HumanCannonSprites {
+  readonly empty: HTMLImageElement;
+  readonly loaded: HTMLImageElement;
+}
+
+export interface MissileTruckSprites {
+  readonly empty: HTMLImageElement;
+  readonly loaded: HTMLImageElement;
+}
+
+export interface EffectSprites {
+  readonly impactFlash: HTMLImageElement;
+}
+
 interface AtlasFrame {
   readonly x: number;
   readonly y: number;
@@ -25,6 +44,19 @@ export interface BatterFrame extends SpritePose {
 }
 
 const CHARACTER_ATLAS_PATH = "./assets/characters/atlas/characters.png";
+const SLINGSHOT_FRAME_PATH =
+  "./assets/characters/launchers/slingshot-frame.png";
+const SLINGSHOT_SEATED_PATH =
+  "./assets/characters/flyer/slingshot-seated.png";
+const HUMAN_CANNON_EMPTY_PATH =
+  "./assets/characters/launchers/human-cannon.png";
+const HUMAN_CANNON_LOADED_PATH =
+  "./assets/characters/launchers/human-cannon-loaded-v1.png";
+const MISSILE_TRUCK_PATH =
+  "./assets/characters/launchers/missile-truck.png";
+const MISSILE_TRUCK_LOADED_PATH =
+  "./assets/characters/launchers/missile-truck-loaded-review-v1.png";
+const IMPACT_FLASH_PATH = "./assets/effects/impact-flash.png";
 
 const frame = (
   x: number,
@@ -61,14 +93,32 @@ export const FlyerPoses = {
     anchor: { x: 451, y: 534.5 },
     scale: 0.11,
   },
+  ufo: {
+    frame: frame(918, 2915, 600, 400),
+    anchor: { x: 300, y: 200 },
+    scale: 0.25,
+  },
+  ufoLightsOn: {
+    frame: frame(8, 3992, 600, 400),
+    anchor: { x: 300, y: 200 },
+    scale: 0.25,
+  },
 } as const satisfies Record<string, SpritePose>;
 
 export const MinePose = {
-  frame: frame(918, 2915, 1098, 411),
+  frame: frame(616, 3992, 1098, 411),
   // The visible bottom edge sits on the ground; the remaining pixels are padding.
   anchor: { x: 549, y: 399 },
   scale: 0.052,
 } as const satisfies SpritePose;
+
+export const PickupPoses = {
+  ufo: {
+    frame: frame(1722, 3992, 264, 168),
+    anchor: { x: 132, y: 84 },
+    scale: 0.25,
+  },
+} as const satisfies Record<string, SpritePose>;
 
 const BATTER_SCALE = 0.145;
 
@@ -137,6 +187,82 @@ export const loadCharacterSprites = async (): Promise<CharacterSprites | null> =
     return { image };
   } catch (error) {
     console.error("Character sprites failed to load; using geometry fallback.", error);
+    return null;
+  }
+};
+
+const loadImage = async (path: string): Promise<HTMLImageElement> => {
+  const image = new Image();
+  image.decoding = "async";
+  await new Promise<void>((resolve, reject) => {
+    image.addEventListener("load", () => resolve(), { once: true });
+    image.addEventListener(
+      "error",
+      () => reject(new Error(`Unable to load ${path}`)),
+      { once: true },
+    );
+    image.src = new URL(path, document.baseURI).href;
+  });
+  await image.decode();
+  return image;
+};
+
+export const loadSlingshotSprites = async (): Promise<SlingshotSprites | null> => {
+  try {
+    const [frameImage, seatedFlyer] = await Promise.all([
+      loadImage(SLINGSHOT_FRAME_PATH),
+      loadImage(SLINGSHOT_SEATED_PATH),
+    ]);
+    return { frame: frameImage, seatedFlyer };
+  } catch (error) {
+    console.error(
+      "Slingshot sprites failed to load; using geometry fallback.",
+      error,
+    );
+    return null;
+  }
+};
+
+export const loadHumanCannonSprites = async (): Promise<HumanCannonSprites | null> => {
+  try {
+    const [empty, loaded] = await Promise.all([
+      loadImage(HUMAN_CANNON_EMPTY_PATH),
+      loadImage(HUMAN_CANNON_LOADED_PATH),
+    ]);
+    return { empty, loaded };
+  } catch (error) {
+    console.error(
+      "Human cannon sprites failed to load; using geometry fallback.",
+      error,
+    );
+    return null;
+  }
+};
+
+export const loadMissileTruckSprites = async (): Promise<MissileTruckSprites | null> => {
+  try {
+    const [empty, loaded] = await Promise.all([
+      loadImage(MISSILE_TRUCK_PATH),
+      loadImage(MISSILE_TRUCK_LOADED_PATH),
+    ]);
+    return { empty, loaded };
+  } catch (error) {
+    console.error(
+      "Missile truck sprite failed to load; using geometry fallback.",
+      error,
+    );
+    return null;
+  }
+};
+
+export const loadEffectSprites = async (): Promise<EffectSprites | null> => {
+  try {
+    return { impactFlash: await loadImage(IMPACT_FLASH_PATH) };
+  } catch (error) {
+    console.error(
+      "Effect sprites failed to load; using geometry fallback.",
+      error,
+    );
     return null;
   }
 };
