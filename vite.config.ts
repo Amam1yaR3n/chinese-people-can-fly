@@ -93,6 +93,11 @@ export default defineConfig({
         for (const audioFile of [
           "bgm.m4a",
           "launch-hit.mp3",
+          "batter-hit.mp3",
+          "slingshot-release.mp3",
+          "cannon-launch.mp3",
+          "missile-launch.mp3",
+          "ufo-pickup.mp3",
           "sky-lantern-pickup.mp3",
           "sixth-gen-jet-pickup.mp3",
           "mine-trigger.mp3",

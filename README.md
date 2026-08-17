@@ -91,4 +91,4 @@ src/
    └── audio.ts      媒体素材加载与 Web Audio 程序音效
 ```
 
-音频素材位于 `assets/audio/`：`launch-hit.mp3` 用于击球，`red-packet-pickup.mp3` 用于拾取红包，`sky-lantern-pickup.mp3` 与 `sixth-gen-jet-pickup.mp3` 用于对应变身道具，UFO 首版拾取暂不播放专用音效，`mine-trigger.mp3` 用于触发地雷，`water-skip.mp3` 用于成功打水漂。`bgm.m4a` 会在首次操作后开始循环，并在页面进入后台时暂停。
+音频素材位于 `assets/audio/`：`launch-hit.mp3` 与 `batter-hit.mp3` 叠加用于神鹰黑手哥击球，`slingshot-release.mp3` 用于弹弓释放，`cannon-launch.mp3` 用于人间大炮发射，`missile-launch.mp3` 用于导弹发射车发射；`red-packet-pickup.mp3` 用于拾取红包，`sky-lantern-pickup.mp3`、`sixth-gen-jet-pickup.mp3` 与 `ufo-pickup.mp3` 分别用于拾取孔明灯、六代机与 UFO，`mine-trigger.mp3` 用于触发地雷，`water-skip.mp3` 用于成功打水漂。`bgm.m4a` 会在首次操作后开始循环，并在页面进入后台时暂停。

@@ -8,6 +8,11 @@ const SIXTH_GEN_JET_PICKUP_PATH =
 const MINE_TRIGGER_PATH = "./assets/audio/mine-trigger.mp3";
 const WATER_SKIP_PATH = "./assets/audio/water-skip.mp3";
 const RED_PACKET_PICKUP_PATH = "./assets/audio/red-packet-pickup.mp3";
+const UFO_PICKUP_PATH = "./assets/audio/ufo-pickup.mp3";
+const BATTER_HIT_PATH = "./assets/audio/batter-hit.mp3";
+const SLINGSHOT_RELEASE_PATH = "./assets/audio/slingshot-release.mp3";
+const CANNON_LAUNCH_PATH = "./assets/audio/cannon-launch.mp3";
+const MISSILE_LAUNCH_PATH = "./assets/audio/missile-launch.mp3";
 const LAUNCH_HIT_VOLUME_SCALE = 0.62;
 
 export class AudioController {
@@ -20,6 +25,11 @@ export class AudioController {
   private readonly mineTrigger: HTMLAudioElement;
   private readonly waterSkip: HTMLAudioElement;
   private readonly redPacketPickup: HTMLAudioElement;
+  private readonly ufoPickup: HTMLAudioElement;
+  private readonly batterHit: HTMLAudioElement;
+  private readonly slingshotRelease: HTMLAudioElement;
+  private readonly cannonLaunch: HTMLAudioElement;
+  private readonly missileLaunch: HTMLAudioElement;
   private musicVolume: number;
   private effectsVolume: number;
   private unlocked = false;
@@ -45,6 +55,17 @@ export class AudioController {
     this.waterSkip = this.createMedia(WATER_SKIP_PATH, this.effectsVolume);
     this.redPacketPickup = this.createMedia(
       RED_PACKET_PICKUP_PATH,
+      this.effectsVolume,
+    );
+    this.ufoPickup = this.createMedia(UFO_PICKUP_PATH, this.effectsVolume);
+    this.batterHit = this.createMedia(BATTER_HIT_PATH, this.effectsVolume);
+    this.slingshotRelease = this.createMedia(
+      SLINGSHOT_RELEASE_PATH,
+      this.effectsVolume,
+    );
+    this.cannonLaunch = this.createMedia(CANNON_LAUNCH_PATH, this.effectsVolume);
+    this.missileLaunch = this.createMedia(
+      MISSILE_LAUNCH_PATH,
       this.effectsVolume,
     );
   }
@@ -88,6 +109,11 @@ export class AudioController {
     this.mineTrigger.volume = this.effectsVolume;
     this.waterSkip.volume = this.effectsVolume;
     this.redPacketPickup.volume = this.effectsVolume;
+    this.ufoPickup.volume = this.effectsVolume;
+    this.batterHit.volume = this.effectsVolume;
+    this.slingshotRelease.volume = this.effectsVolume;
+    this.cannonLaunch.volume = this.effectsVolume;
+    this.missileLaunch.volume = this.effectsVolume;
     if (this.context && this.effectsGain) {
       this.effectsGain.gain.setValueAtTime(
         this.effectsVolume,
@@ -107,9 +133,6 @@ export class AudioController {
       case "swing":
         this.noise(0.17, 0.07, "bandpass", 1050);
         break;
-      case "hit":
-        this.replay(this.launchHit);
-        break;
       case "land":
         this.tone(92, 48, 0.12, 0.09, "sine");
         break;
@@ -127,6 +150,22 @@ export class AudioController {
         break;
       case "pickupJet":
         this.replay(this.sixthGenJetPickup);
+        break;
+      case "pickupUfo":
+        this.replay(this.ufoPickup);
+        break;
+      case "hitBlackEagle":
+        this.replay(this.launchHit);
+        this.replay(this.batterHit);
+        break;
+      case "launchSlingshot":
+        this.replay(this.slingshotRelease);
+        break;
+      case "launchHumanCannon":
+        this.replay(this.cannonLaunch);
+        break;
+      case "launchMissileTruck":
+        this.replay(this.missileLaunch);
         break;
     }
   }

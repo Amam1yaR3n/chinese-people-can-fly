@@ -16,7 +16,7 @@ export const GameConfig = {
   launchSpeed: 150,
   launchAngleMin: 15 * DEG,
   launchAngleMax: 75 * DEG,
-  groundFriction: 24,
+  groundFriction: 48,
   stopSpeed: 1.5,
 
   player: {
@@ -104,8 +104,8 @@ export const GameConfig = {
     approachWindow: 0.5,
     preImpactWindow: 0.1,
     postImpactWindow: 0.12,
-    horizontalRetention: 0.8,
-    verticalRetention: 0.8,
+    horizontalRetention: 0.88,
+    verticalRetention: 0.5,
     minImpactSpeed: 150 * 0.3,
   },
 

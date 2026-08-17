@@ -52,13 +52,17 @@ export interface CameraState {
 
 export type AudioEvent =
   | "swing"
-  | "hit"
   | "land"
   | "skip"
   | "explosion"
   | "pickupRedPacket"
   | "pickupLantern"
-  | "pickupJet";
+  | "pickupJet"
+  | "pickupUfo"
+  | "hitBlackEagle"
+  | "launchSlingshot"
+  | "launchHumanCannon"
+  | "launchMissileTruck";
 
 export interface ParticleState {
   pos: Vec2;

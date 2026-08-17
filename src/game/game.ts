@@ -936,7 +936,20 @@ export class Game {
     this.player.vel = { ...velocity };
     this.phase = "airborne";
     this.resetApproachState();
-    this.emitAudio("hit");
+    switch (this.launcherId) {
+      case "blackEagle":
+        this.emitAudio("hitBlackEagle");
+        break;
+      case "slingshot":
+        this.emitAudio("launchSlingshot");
+        break;
+      case "humanCannon":
+        this.emitAudio("launchHumanCannon");
+        break;
+      case "missileTruck":
+        this.emitAudio("launchMissileTruck");
+        break;
+    }
   }
 
   private batterClubSegment(elapsed: number): { start: Vec2; end: Vec2 } {
@@ -1190,6 +1203,7 @@ export class Game {
         this.player.vel.y = 0;
         this.verticalTrackingActive = true;
         this.resetApproachState();
+        this.emitAudio("pickupUfo");
         break;
     }
   }
