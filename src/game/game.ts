@@ -170,6 +170,7 @@ export class Game {
   private mineId = 0;
   private nextPickupDistance: number = GameConfig.pickup.safeDistance;
   private pickupId = 0;
+  private elapsedTime = 0;
   private slingshot: SlingshotRuntime = this.createSlingshotRuntime();
   private humanCannon: HumanCannonRuntime = this.createHumanCannonRuntime();
 
@@ -274,6 +275,7 @@ export class Game {
   }
 
   update(deltaTime: number): void {
+    this.elapsedTime += deltaTime;
     const previousPlayerPosition = { ...this.player.pos };
     this.updateSwing(deltaTime);
     this.updateSlingshot(deltaTime);
@@ -390,6 +392,7 @@ export class Game {
     this.pickups = [];
     this.mineId = 0;
     this.pickupId = 0;
+    this.elapsedTime = 0;
 
     const seedArray = new Uint32Array(1);
     crypto.getRandomValues(seedArray);
@@ -2277,24 +2280,34 @@ export class Game {
       const pickupConfig = this.getPickupConfig(pickup.type);
       const width = pickupConfig.width * GameConfig.pixelsPerMeter;
       const height = pickupConfig.height * GameConfig.pixelsPerMeter;
+      const idle = pickup.status === "available";
+      const floatY = idle
+        ? Math.sin(
+            this.elapsedTime * Math.PI * 2 * GameConfig.pickup.floatFrequency +
+              pickup.id * 2.399963,
+          ) * GameConfig.pickup.floatAmplitude
+        : 0;
+      const drawScreen = { x: screen.x, y: screen.y + floatY };
+      context.save();
       switch (pickup.type) {
         case "redPacket":
-          this.drawRedPacketIcon(context, screen, width, height);
+          this.drawRedPacketIcon(context, drawScreen, width, height);
           break;
         case "skyLantern":
-          this.drawSkyLanternIcon(context, screen, width, height);
+          this.drawSkyLanternIcon(context, drawScreen, width, height);
           break;
         case "sixthGenJet":
-          this.drawJetIcon(context, screen, width, height);
+          this.drawJetIcon(context, drawScreen, width, height);
           break;
         case "ufo":
           if (this.sprites) {
-            drawSpritePose(context, this.sprites, PickupPoses.ufo, screen);
+            drawSpritePose(context, this.sprites, PickupPoses.ufo, drawScreen);
           } else {
-            this.drawUfoIcon(context, screen, width, height, false);
+            this.drawUfoIcon(context, drawScreen, width, height, false);
           }
           break;
       }
+      context.restore();
     }
   }
 

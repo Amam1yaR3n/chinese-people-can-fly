@@ -16,7 +16,7 @@ export const GameConfig = {
   launchSpeed: 150,
   launchAngleMin: 15 * DEG,
   launchAngleMax: 75 * DEG,
-  groundFriction: 48,
+  groundFriction: 36,
   stopSpeed: 1.5,
 
   player: {
@@ -105,7 +105,7 @@ export const GameConfig = {
     preImpactWindow: 0.1,
     postImpactWindow: 0.12,
     horizontalRetention: 0.88,
-    verticalRetention: 0.5,
+    verticalRetention: 0.6,
     minImpactSpeed: 150 * 0.3,
   },
 
@@ -134,6 +134,9 @@ export const GameConfig = {
     radius: 20,
     magnetSpeed: 500,
     magnetCollectDistance: 2,
+    // 未拾取道具的上下漂浮动效（屏幕像素与频率）。
+    floatAmplitude: 7,
+    floatFrequency: 0.6,
     redPacket: {
       weight: 0.5,
       minAltitude: 20,
