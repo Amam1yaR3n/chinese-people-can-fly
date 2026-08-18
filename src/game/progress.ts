@@ -28,7 +28,7 @@ const sanitizeDistance = (value: unknown): number => {
   return Math.max(0, Math.floor(parsed));
 };
 
-const sanitizeProgress = (value: unknown): ProgressV1 => {
+export const sanitizeProgress = (value: unknown): ProgressV1 => {
   if (!value || typeof value !== "object") return DEFAULT_PROGRESS;
 
   const candidate = value as Partial<ProgressV1>;

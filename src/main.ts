@@ -1,11 +1,21 @@
 import { AudioController } from "./game/audio";
+import {
+  loadCloudProgress,
+  mergeProgress,
+  queueCloudProgressSave,
+} from "./game/cloud-progress";
 import { GameConfig } from "./game/config";
 import { Game } from "./game/game";
 import {
   LAUNCHERS,
   isLauncherSelectable,
   isLauncherUnlocked,
+  type LauncherId,
 } from "./game/launchers";
+import {
+  createLeaderboardScoreQueue,
+  loadLeaderboard,
+} from "./game/leaderboard";
 import {
   loadProgress,
   recordCompletedDistance,
@@ -20,7 +30,11 @@ import {
   loadMissileTruckSprites,
   loadSlingshotSprites,
 } from "./game/sprites";
-import type { Vec2 } from "./game/types";
+import type { GamePhase, Vec2 } from "./game/types";
+import type {
+  ToyMyRankReadResult,
+  ToyRankItem,
+} from "./platform/toy-sdk";
 
 interface VolumeSettings {
   music: number;
@@ -109,6 +123,42 @@ const saveUnlockNoticePending = (pending: boolean): void => {
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 const distanceOutput = document.querySelector<HTMLOutputElement>("#distance");
 const scoreOutput = document.querySelector<HTMLOutputElement>("#score");
+const leaderboardButton = document.querySelector<HTMLButtonElement>(
+  "#leaderboard-button",
+);
+const leaderboardDialog = document.querySelector<HTMLElement>(
+  "#leaderboard-dialog",
+);
+const leaderboardClose = document.querySelector<HTMLButtonElement>(
+  "#leaderboard-close",
+);
+const leaderboardContent = document.querySelector<HTMLElement>(
+  "#leaderboard-content",
+);
+const leaderboardStatus = document.querySelector<HTMLElement>(
+  "#leaderboard-status",
+);
+const leaderboardStatusTitle = document.querySelector<HTMLElement>(
+  "#leaderboard-status-title",
+);
+const leaderboardStatusDetail = document.querySelector<HTMLElement>(
+  "#leaderboard-status-detail",
+);
+const leaderboardRetry = document.querySelector<HTMLButtonElement>(
+  "#leaderboard-retry",
+);
+const leaderboardTable = document.querySelector<HTMLElement>(
+  "#leaderboard-table",
+);
+const leaderboardList = document.querySelector<HTMLOListElement>(
+  "#leaderboard-list",
+);
+const myRankPosition = document.querySelector<HTMLElement>(
+  "#my-rank-position",
+);
+const myRankScore = document.querySelector<HTMLOutputElement>(
+  "#my-rank-score",
+);
 const resultPanel = document.querySelector<HTMLElement>("#result");
 const resultScore = document.querySelector<HTMLElement>("#result-score");
 const resultDistance = document.querySelector<HTMLElement>("#result-distance");
@@ -127,6 +177,9 @@ const settingsClose = document.querySelector<HTMLButtonElement>(
   "#settings-close",
 );
 const launcherGrid = document.querySelector<HTMLElement>("#launcher-grid");
+const bestDistanceOutput = document.querySelector<HTMLOutputElement>(
+  "#best-distance",
+);
 const musicVolumeInput = document.querySelector<HTMLInputElement>(
   "#music-volume",
 );
@@ -144,6 +197,18 @@ if (
   !canvas ||
   !distanceOutput ||
   !scoreOutput ||
+  !leaderboardButton ||
+  !leaderboardDialog ||
+  !leaderboardClose ||
+  !leaderboardContent ||
+  !leaderboardStatus ||
+  !leaderboardStatusTitle ||
+  !leaderboardStatusDetail ||
+  !leaderboardRetry ||
+  !leaderboardTable ||
+  !leaderboardList ||
+  !myRankPosition ||
+  !myRankScore ||
   !resultPanel ||
   !resultScore ||
   !resultDistance ||
@@ -156,6 +221,7 @@ if (
   !settingsDialog ||
   !settingsClose ||
   !launcherGrid ||
+  !bestDistanceOutput ||
   !musicVolumeInput ||
   !musicVolumeOutput ||
   !effectsVolumeInput ||
@@ -175,21 +241,31 @@ const audio = new AudioController(
   volumeSettings.music / 100,
   volumeSettings.effects / 100,
 );
+const leaderboardScoreQueue = createLeaderboardScoreQueue();
 let game: Game | null = null;
 let accumulator = 0;
 let lastTimestamp = performance.now();
 let hidden = document.hidden;
 let portraitPaused = false;
 let settingsOpen = false;
+let leaderboardOpen = false;
 let tutorialOpen = false;
 let unlockNoticePending = false;
 let gameEnded = false;
 let musicPreviewTimer: number | null = null;
 let activeLauncherPointerId: number | null = null;
+let pendingCloudLauncher: LauncherId | null = null;
+let roundHasInteraction = false;
+let leaderboardRequestId = 0;
 
 const updateAudioPause = (): void => {
   audio.setPaused(
-    hidden || portraitPaused || settingsOpen || tutorialOpen || gameEnded,
+    hidden ||
+      portraitPaused ||
+      settingsOpen ||
+      leaderboardOpen ||
+      tutorialOpen ||
+      gameEnded,
   );
 };
 
@@ -221,6 +297,28 @@ const cancelActiveLauncherGesture = (): void => {
     releaseLauncherPointerCapture(activeLauncherPointerId);
     activeLauncherPointerId = null;
   }
+};
+
+const applyPendingCloudLauncher = (): void => {
+  if (
+    !game ||
+    !pendingCloudLauncher ||
+    roundHasInteraction ||
+    game.getSnapshot().phase !== "ready"
+  ) {
+    return;
+  }
+
+  game.setLauncher(pendingCloudLauncher);
+  pendingCloudLauncher = null;
+};
+
+const finishGameInput = (phaseBeforeInput: GamePhase): void => {
+  if (!game) return;
+  const resetFromResult =
+    phaseBeforeInput === "ended" && game.getSnapshot().phase === "ready";
+  roundHasInteraction = !resetFromResult;
+  if (resetFromResult) applyPendingCloudLauncher();
 };
 
 const renderLauncherGrid = (): void => {
@@ -269,7 +367,10 @@ const renderLauncherGrid = (): void => {
         ...progress,
         selectedLauncher: launcher.id,
       });
+      pendingCloudLauncher = null;
+      roundHasInteraction = false;
       game?.setLauncher(progress.selectedLauncher);
+      queueCloudProgressSave(progress);
       renderLauncherGrid();
       updateHud();
     });
@@ -277,6 +378,8 @@ const renderLauncherGrid = (): void => {
   });
 
   launcherGrid.replaceChildren(...cards);
+  bestDistanceOutput.value = `${progress.bestDistance}米`;
+  bestDistanceOutput.textContent = bestDistanceOutput.value;
 };
 
 const stopMusicPreview = (): void => {
@@ -298,7 +401,161 @@ const previewMusic = async (): Promise<void> => {
   }, 700);
 };
 
-const setSettingsOpen = (open: boolean): void => {
+const formatRankScore = (score: number): string =>
+  `${score.toLocaleString("zh-CN")} 分`;
+
+const normalizeAvatarUrl = (value: string): string | null => {
+  const candidate = value.trim();
+  if (!candidate) return null;
+  if (candidate.startsWith("//")) return `https:${candidate}`;
+
+  try {
+    const url = new URL(candidate, window.location.href);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const renderMyRank = (result: ToyMyRankReadResult | null): void => {
+  if (!result) {
+    myRankPosition.textContent = "加载中…";
+    myRankScore.value = "";
+    myRankScore.textContent = "";
+    return;
+  }
+
+  if (result.status !== "ok") {
+    myRankPosition.textContent = "登录后查看我的排名";
+    myRankScore.value = "—";
+    myRankScore.textContent = "—";
+    return;
+  }
+
+  if (!result.ranked) {
+    myRankPosition.textContent = "未上榜";
+    myRankScore.value = "0 分";
+    myRankScore.textContent = "0 分";
+    return;
+  }
+
+  myRankPosition.textContent = `第 ${result.rank.toLocaleString("zh-CN")} 名`;
+  const score = formatRankScore(result.score);
+  myRankScore.value = score;
+  myRankScore.textContent = score;
+};
+
+const showLeaderboardStatus = (
+  title: string,
+  detail: string,
+  retry: boolean,
+): void => {
+  leaderboardTable.hidden = true;
+  leaderboardStatus.hidden = false;
+  leaderboardStatusTitle.textContent = title;
+  leaderboardStatusDetail.textContent = detail;
+  leaderboardRetry.hidden = !retry;
+};
+
+const renderLeaderboardList = (
+  items: readonly ToyRankItem[],
+  mine: ToyMyRankReadResult,
+): void => {
+  leaderboardList.replaceChildren();
+
+  for (const item of items) {
+    const nickname = item.nickname.trim() || "神秘飞行员";
+    const row = document.createElement("li");
+    row.className = "rank-row";
+    if (item.rank >= 1 && item.rank <= 3) {
+      row.classList.add(`is-top-${item.rank}`);
+    }
+    if (mine.status === "ok" && mine.ranked && mine.rank === item.rank) {
+      row.classList.add("is-mine");
+      row.setAttribute("aria-current", "true");
+    }
+
+    const rank = document.createElement("span");
+    rank.className = "rank-position";
+    rank.textContent = item.rank.toLocaleString("zh-CN");
+
+    const player = document.createElement("span");
+    player.className = "rank-player";
+    const avatar = document.createElement("span");
+    avatar.className = "rank-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    const avatarFallback = document.createElement("span");
+    avatarFallback.textContent = Array.from(nickname)[0] ?? "飞";
+    avatar.append(avatarFallback);
+
+    const avatarUrl = normalizeAvatarUrl(item.avatar);
+    if (avatarUrl) {
+      const image = document.createElement("img");
+      image.src = avatarUrl;
+      image.alt = "";
+      image.loading = "lazy";
+      image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => image.remove(), { once: true });
+      avatar.append(image);
+    }
+
+    const name = document.createElement("span");
+    name.className = "rank-nickname";
+    name.textContent = nickname;
+    player.append(avatar, name);
+
+    const score = document.createElement("span");
+    score.className = "rank-score";
+    score.textContent = formatRankScore(item.score);
+    row.append(rank, player, score);
+    leaderboardList.append(row);
+  }
+
+  leaderboardStatus.hidden = true;
+  leaderboardRetry.hidden = true;
+  leaderboardTable.hidden = false;
+};
+
+const refreshLeaderboard = async (): Promise<void> => {
+  const requestId = ++leaderboardRequestId;
+  leaderboardContent.setAttribute("aria-busy", "true");
+  leaderboardList.replaceChildren();
+  renderMyRank(null);
+  showLeaderboardStatus(
+    "正在加载排行榜…",
+    "正在连接 B站 Toy 排行榜",
+    false,
+  );
+
+  const result = await loadLeaderboard();
+  if (!leaderboardOpen || requestId !== leaderboardRequestId) return;
+
+  leaderboardContent.setAttribute("aria-busy", "false");
+  renderMyRank(result.mine);
+  if (result.list.status !== "ok") {
+    showLeaderboardStatus(
+      "排行榜暂不可用",
+      "请在 B站内打开本游戏后重试，当前游戏进度不受影响。",
+      true,
+    );
+    return;
+  }
+
+  if (result.list.items.length === 0) {
+    showLeaderboardStatus(
+      "还没有玩家上榜",
+      "完成一局后，你的最高单局分就有机会出现在这里。",
+      false,
+    );
+    return;
+  }
+
+  renderLeaderboardList(result.list.items, result.mine);
+};
+
+const setSettingsOpen = (open: boolean, restoreFocus = true): void => {
   if (settingsOpen === open) return;
   if (open) cancelActiveLauncherGesture();
   settingsOpen = open;
@@ -318,7 +575,38 @@ const setSettingsOpen = (open: boolean): void => {
     return;
   }
 
-  settingsButton.focus({ preventScroll: true });
+  if (restoreFocus) settingsButton.focus({ preventScroll: true });
+};
+
+const setLeaderboardOpen = (open: boolean, restoreFocus = true): void => {
+  if (leaderboardOpen === open) return;
+  if (open) {
+    leaderboardOpen = true;
+    if (settingsOpen) setSettingsOpen(false, false);
+    cancelActiveLauncherGesture();
+  } else {
+    leaderboardOpen = false;
+  }
+
+  leaderboardDialog.hidden = !open;
+  leaderboardButton.setAttribute("aria-expanded", String(open));
+  leaderboardButton.setAttribute(
+    "aria-label",
+    open ? "关闭排行榜" : "打开排行榜",
+  );
+  document.body.toggleAttribute("data-leaderboard-open", open);
+  accumulator = 0;
+  updateAudioPause();
+
+  if (open) {
+    leaderboardClose.focus({ preventScroll: true });
+    void refreshLeaderboard();
+    return;
+  }
+
+  leaderboardRequestId += 1;
+  leaderboardContent.setAttribute("aria-busy", "false");
+  if (restoreFocus) leaderboardButton.focus({ preventScroll: true });
 };
 
 const setTutorialOpen = (open: boolean): void => {
@@ -346,6 +634,45 @@ const hasNewlyUnlockedLauncher = (
       launcher.unlockDistance > previousBestDistance &&
       launcher.unlockDistance <= nextBestDistance,
   );
+
+const progressMatches = (
+  first: ProgressV1,
+  second: ProgressV1,
+): boolean =>
+  first.bestDistance === second.bestDistance &&
+  first.selectedLauncher === second.selectedLauncher;
+
+const syncProgressFromCloud = async (
+  progressAtSyncStart: ProgressV1,
+): Promise<void> => {
+  const result = await loadCloudProgress();
+  if (result.status === "empty") {
+    queueCloudProgressSave(progress);
+    return;
+  }
+  if (result.status !== "loaded") return;
+
+  const mergedProgress = mergeProgress(
+    progress,
+    result.progress,
+    progress !== progressAtSyncStart,
+  );
+  const localNeedsUpdate = !progressMatches(progress, mergedProgress);
+
+  if (localNeedsUpdate) {
+    progress = saveProgress(mergedProgress);
+    if (game) {
+      pendingCloudLauncher = progress.selectedLauncher;
+      applyPendingCloudLauncher();
+    }
+    renderLauncherGrid();
+    updateHud();
+  }
+
+  if (!progressMatches(result.progress, mergedProgress)) {
+    queueCloudProgressSave(mergedProgress);
+  }
+};
 
 const setUnlockNoticeVisible = (visible: boolean): void => {
   unlockNotice.hidden = !visible;
@@ -442,12 +769,14 @@ const updateHud = (): void => {
   const endedChanged = gameEnded !== snapshot.ended;
   if (snapshot.ended && !gameEnded) {
     resultMessage.textContent = pickResultMessage(snapshot.distance);
+    leaderboardScoreQueue.enqueue(snapshot.score);
   }
   if (snapshot.ended && !gameEnded) {
     const previousBestDistance = progress.bestDistance;
     const nextProgress = recordCompletedDistance(progress, snapshot.distance);
     if (nextProgress !== progress) {
       progress = nextProgress;
+      queueCloudProgressSave(progress);
       if (
         hasNewlyUnlockedLauncher(
           previousBestDistance,
@@ -476,9 +805,21 @@ const updateHud = (): void => {
 };
 
 const performAction = (): void => {
-  if (hidden || portraitPaused || settingsOpen || tutorialOpen || !game) return;
+  if (
+    hidden ||
+    portraitPaused ||
+    settingsOpen ||
+    leaderboardOpen ||
+    tutorialOpen ||
+    !game
+  ) {
+    return;
+  }
   void audio.unlock();
+  applyPendingCloudLauncher();
+  const phaseBeforeInput = game.getSnapshot().phase;
   game.action();
+  finishGameInput(phaseBeforeInput);
   updateHud();
 };
 
@@ -500,17 +841,22 @@ window.addEventListener(
     const target = event.target;
     if (
       settingsOpen ||
+      leaderboardOpen ||
       tutorialOpen ||
-      (target instanceof Element && target.closest("#settings-button"))
+      (target instanceof Element &&
+        target.closest("#settings-button, #leaderboard-button"))
     ) {
       return;
     }
     if (hidden || portraitPaused || !game) return;
     event.preventDefault();
     void audio.unlock();
+    applyPendingCloudLauncher();
+    const phaseBeforeInput = game.getSnapshot().phase;
     const beganLauncherDrag = game.pointerDown(
       pointerToLogicalPosition(event),
     );
+    finishGameInput(phaseBeforeInput);
     if (beganLauncherDrag) {
       activeLauncherPointerId = event.pointerId;
       try {
@@ -559,10 +905,15 @@ canvas.addEventListener("lostpointercapture", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (event.code === "Escape" && (settingsOpen || tutorialOpen)) {
+  if (
+    event.code === "Escape" &&
+    (settingsOpen || leaderboardOpen || tutorialOpen)
+  ) {
     event.preventDefault();
     if (tutorialOpen) {
       setTutorialOpen(false);
+    } else if (leaderboardOpen) {
+      setLeaderboardOpen(false);
     } else {
       setSettingsOpen(false);
     }
@@ -571,6 +922,7 @@ window.addEventListener("keydown", (event) => {
   if (event.code !== "Space" || event.repeat) return;
   if (
     settingsOpen ||
+    leaderboardOpen ||
     tutorialOpen ||
     (event.target instanceof Element &&
       event.target.closest("button, input"))
@@ -583,11 +935,24 @@ window.addEventListener("keydown", (event) => {
 
 settingsButton.addEventListener("click", () => {
   dismissUnlockNotice();
+  if (leaderboardOpen) setLeaderboardOpen(false, false);
   setSettingsOpen(!settingsOpen);
 });
 
 settingsClose.addEventListener("click", () => {
   setSettingsOpen(false);
+});
+
+leaderboardButton.addEventListener("click", () => {
+  setLeaderboardOpen(!leaderboardOpen);
+});
+
+leaderboardClose.addEventListener("click", () => {
+  setLeaderboardOpen(false);
+});
+
+leaderboardRetry.addEventListener("click", () => {
+  void refreshLeaderboard();
 });
 
 tutorialClose.addEventListener("click", () => {
@@ -646,7 +1011,13 @@ const frame = (timestamp: number): void => {
   );
   lastTimestamp = timestamp;
 
-  if (!hidden && !portraitPaused && !settingsOpen && !tutorialOpen) {
+  if (
+    !hidden &&
+    !portraitPaused &&
+    !settingsOpen &&
+    !leaderboardOpen &&
+    !tutorialOpen
+  ) {
     accumulator += elapsed;
     while (accumulator >= GameConfig.fixedStep) {
       game.update(GameConfig.fixedStep);
@@ -699,4 +1070,6 @@ if (!hasSeenTutorial()) {
 unlockNoticePending = loadUnlockNoticePending();
 setUnlockNoticeVisible(unlockNoticePending);
 
+const progressAtCloudSyncStart = progress;
+void syncProgressFromCloud(progressAtCloudSyncStart);
 void startGame();

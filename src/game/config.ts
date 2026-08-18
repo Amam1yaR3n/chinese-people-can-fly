@@ -137,6 +137,10 @@ export const GameConfig = {
     rackAngle: 26 * DEG,
     launchSpeed: 260,
     launchAngle: 22 * DEG,
+    tailFlameDuration: 1.2,
+    tailFlameWidth: 72,
+    tailFlameAnchor: { x: 1643, y: 454 },
+    tailFlameFootOffset: { x: -54, y: 12 },
   },
 
   skip: {
@@ -253,7 +257,8 @@ export const GameConfig = {
   background: {
     skyColor: "#a9ddeb",
     sunScreen: { x: 1410, y: 190 },
-    cloudParallax: 0.06,
+    // Higher clouds drift more slowly; lower clouds move faster for depth.
+    cloudParallaxes: [0.035, 0.05, 0.08, 0.065],
     cloudCycleWidth: 2300,
     cloudScreens: [
       { x: 180, y: 155 },
@@ -261,8 +266,12 @@ export const GameConfig = {
       { x: 1120, y: 420 },
       { x: 1540, y: 350 },
     ],
+    midgroundParallax: 0.14,
+    midgroundVerticalParallax: 0.16,
+    midgroundBottomScreenY: 930,
+    midgroundScale: 1,
     groundSourceTop: 630,
-    groundSurfaceY: 668,
+    groundSurfaceY: 661,
     groundTileScale: 1,
   },
 

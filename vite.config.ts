@@ -88,6 +88,7 @@ export default defineConfig({
           "human-cannon-fuse-flame-1.png",
           "human-cannon-fuse-flame-2.png",
           "human-cannon-launch-smoke.png",
+          "missile-player-tail-flame.png",
         ]) {
           copyFileSync(
             resolve(import.meta.dirname, "assets/effects", effectFile),
@@ -102,7 +103,8 @@ export default defineConfig({
         mkdirSync(backgroundDirectory, { recursive: true });
         for (const backgroundFile of [
           "far-atlas.png",
-          "ground-tile-v2.png",
+          "china-mountain-forest-midground.png",
+          "ground-tile-v8.png",
         ]) {
           copyFileSync(
             resolve(

@@ -178,6 +178,7 @@ export class Game {
   private nextPickupDistance: number = GameConfig.pickup.safeDistance;
   private pickupId = 0;
   private elapsedTime = 0;
+  private missileTailFlameRemaining = 0;
   private slingshot: SlingshotRuntime = this.createSlingshotRuntime();
   private humanCannon: HumanCannonRuntime = this.createHumanCannonRuntime();
 
@@ -288,6 +289,7 @@ export class Game {
     this.updateSwing(deltaTime);
     this.updateSlingshot(deltaTime);
     this.updateHumanCannon(deltaTime);
+    this.updateMissileTailFlame(deltaTime);
 
     switch (this.phase) {
       case "falling":
@@ -325,6 +327,7 @@ export class Game {
     const shake = this.getShakeOffset();
     context.save();
     context.translate(shake.x, shake.y);
+    this.drawMidground(context);
     this.drawWorld(context);
     context.restore();
   }
@@ -398,6 +401,7 @@ export class Game {
     this.mineId = 0;
     this.pickupId = 0;
     this.elapsedTime = 0;
+    this.missileTailFlameRemaining = 0;
 
     const seedArray = new Uint32Array(1);
     crypto.getRandomValues(seedArray);
@@ -672,11 +676,20 @@ export class Game {
 
   private launchMissileTruck(): void {
     const { launchAngle, launchSpeed, launchWorld } = GameConfig.missileTruck;
+    this.missileTailFlameRemaining =
+      GameConfig.missileTruck.tailFlameDuration;
     this.player.pos = { ...launchWorld };
     this.launchPlayerWithVelocity({
       x: Math.cos(launchAngle) * launchSpeed,
       y: -Math.sin(launchAngle) * launchSpeed,
     });
+  }
+
+  private updateMissileTailFlame(deltaTime: number): void {
+    this.missileTailFlameRemaining = Math.max(
+      0,
+      this.missileTailFlameRemaining - deltaTime,
+    );
   }
 
   private updateInitialFall(deltaTime: number): void {
@@ -1416,14 +1429,16 @@ export class Game {
 
       const {
         cloudCycleWidth,
-        cloudParallax,
+        cloudParallaxes,
         cloudScreens,
       } = GameConfig.background;
-      const scroll =
-        this.camera.x * GameConfig.pixelsPerMeter * cloudParallax;
       for (let index = 0; index < BackgroundPoses.clouds.length; index += 1) {
         const pose = BackgroundPoses.clouds[index];
         const base = cloudScreens[index];
+        const scroll =
+          this.camera.x *
+          GameConfig.pixelsPerMeter *
+          cloudParallaxes[index];
         const halfWidth = (pose.frame.width * pose.scale) / 2;
         const x =
           wrap(base.x - scroll + halfWidth, cloudCycleWidth) - halfWidth;
@@ -1460,6 +1475,46 @@ export class Game {
       290,
       0.72,
     );
+  }
+
+  private drawMidground(context: CanvasRenderingContext2D): void {
+    if (!this.backgroundSprites) return;
+
+    const { logicalWidth, pixelsPerMeter } = GameConfig;
+    const {
+      midgroundBottomScreenY,
+      midgroundParallax,
+      midgroundScale,
+      midgroundVerticalParallax,
+    } = GameConfig.background;
+    const image = this.backgroundSprites.midground;
+    const tileWidth = image.width * midgroundScale;
+    const tileHeight = image.height * midgroundScale;
+    const cycleWidth = tileWidth * 2;
+    const scroll = wrap(
+      this.camera.x * pixelsPerMeter * midgroundParallax,
+      cycleWidth,
+    );
+    let tileIndex = Math.floor(scroll / tileWidth);
+    let x = -(scroll - tileIndex * tileWidth);
+    const y =
+      midgroundBottomScreenY -
+      tileHeight -
+      this.camera.y * pixelsPerMeter * midgroundVerticalParallax;
+
+    while (x < logicalWidth) {
+      if (tileIndex % 2 === 0) {
+        context.drawImage(image, x, y, tileWidth, tileHeight);
+      } else {
+        context.save();
+        context.translate(x + tileWidth, y);
+        context.scale(-1, 1);
+        context.drawImage(image, 0, 0, tileWidth, tileHeight);
+        context.restore();
+      }
+      x += tileWidth;
+      tileIndex += 1;
+    }
   }
 
   private drawCloudFallback(
@@ -1500,6 +1555,7 @@ export class Game {
       this.drawMissileTruckScene(context);
     }
     this.drawEffects(context);
+    this.drawMissileTailFlame(context);
     const playerIsLoaded =
       (this.launcherId === "slingshot" ||
         this.launcherId === "humanCannon" ||
@@ -2323,7 +2379,7 @@ export class Game {
           sourceHeight,
           x,
           drawY,
-          tileWidth,
+          tileWidth + 1,
           tileHeight,
         );
       }
@@ -3089,19 +3145,69 @@ export class Game {
       return;
     }
 
-    const speed = Math.hypot(this.player.vel.x, this.player.vel.y);
-    const rotation =
-      speed <= DISTANCE_EPSILON
-        ? 0
-        : clamp(
-            Math.atan2(this.player.vel.y, this.player.vel.x),
-            -Math.PI / 6,
-            Math.PI / 6,
-          );
+    const rotation = this.airbornePlayerRotation();
     drawSpritePose(context, this.sprites, FlyerPoses.airborne, screen, {
       rotation,
       flipX: true,
     });
+  }
+
+  private airbornePlayerRotation(): number {
+    const speed = Math.hypot(this.player.vel.x, this.player.vel.y);
+    return speed <= DISTANCE_EPSILON
+      ? 0
+      : clamp(
+          Math.atan2(this.player.vel.y, this.player.vel.x),
+          -Math.PI / 6,
+          Math.PI / 6,
+        );
+  }
+
+  private drawMissileTailFlame(context: CanvasRenderingContext2D): void {
+    if (
+      this.launcherId !== "missileTruck" ||
+      this.phase !== "airborne" ||
+      this.powerUp.mode !== "normal" ||
+      this.missileTailFlameRemaining <= 0 ||
+      !this.effectSprites
+    ) {
+      return;
+    }
+
+    const {
+      launchAngle,
+      tailFlameAnchor,
+      tailFlameFootOffset,
+      tailFlameWidth,
+    } = GameConfig.missileTruck;
+    const playerScreen = this.worldToScreen(this.player.pos);
+    const playerRotation = this.airbornePlayerRotation();
+    const cos = Math.cos(playerRotation);
+    const sin = Math.sin(playerRotation);
+    const feet = {
+      x:
+        playerScreen.x +
+        tailFlameFootOffset.x * cos -
+        tailFlameFootOffset.y * sin,
+      y:
+        playerScreen.y +
+        tailFlameFootOffset.x * sin +
+        tailFlameFootOffset.y * cos,
+    };
+    const image = this.effectSprites.missileTailFlame;
+    const scale = tailFlameWidth / image.width;
+
+    context.save();
+    context.translate(feet.x, feet.y);
+    context.rotate(-launchAngle);
+    context.drawImage(
+      image,
+      -tailFlameAnchor.x * scale,
+      -tailFlameAnchor.y * scale,
+      image.width * scale,
+      image.height * scale,
+    );
+    context.restore();
   }
 
   private drawOriginalPlayer(

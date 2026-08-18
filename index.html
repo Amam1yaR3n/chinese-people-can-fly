@@ -22,10 +22,25 @@
         <output id="distance" aria-label="当前最远距离">0 米</output>
         <div class="hud-actions">
           <output id="score" aria-label="当前分数">0 分</output>
+          <button
+            id="leaderboard-button"
+            class="hud-icon-button leaderboard-button"
+            type="button"
+            aria-label="打开排行榜"
+            aria-controls="leaderboard-dialog"
+            aria-expanded="false"
+          >
+            <svg viewBox="0 0 28 28" aria-hidden="true">
+              <rect x="2.2" y="13" width="7.4" height="11.8" rx="1.4" />
+              <rect x="10.3" y="6.3" width="7.4" height="18.5" rx="1.4" />
+              <rect x="18.4" y="10.1" width="7.4" height="14.7" rx="1.4" />
+              <path class="podium-number" d="M14.9 10.2v6.9M12.9 11.8l2-1.6" />
+            </svg>
+          </button>
           <span class="settings-wrap">
             <button
               id="settings-button"
-              class="settings-button"
+              class="hud-icon-button settings-button"
               type="button"
               aria-label="打开游戏设置"
               aria-controls="settings-dialog"
@@ -115,6 +130,65 @@
       </header>
 
       <section
+        id="leaderboard-dialog"
+        class="leaderboard-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="leaderboard-title"
+        hidden
+      >
+        <div class="leaderboard-panel">
+          <button
+            id="leaderboard-close"
+            class="leaderboard-close"
+            type="button"
+            aria-label="关闭排行榜"
+          >
+            ×
+          </button>
+
+          <header class="leaderboard-heading">
+            <h2 id="leaderboard-title">排行榜</h2>
+          </header>
+
+          <div
+            id="leaderboard-content"
+            class="leaderboard-content"
+            aria-live="polite"
+            aria-busy="false"
+          >
+            <div id="leaderboard-status" class="leaderboard-status" hidden>
+              <strong id="leaderboard-status-title"></strong>
+              <span id="leaderboard-status-detail"></span>
+              <button
+                id="leaderboard-retry"
+                class="leaderboard-retry"
+                type="button"
+                hidden
+              >
+                重试
+              </button>
+            </div>
+
+            <div id="leaderboard-table" class="leaderboard-table" hidden>
+              <div class="leaderboard-columns" aria-hidden="true">
+                <span>名次</span>
+                <span>玩家</span>
+                <span>分数</span>
+              </div>
+              <ol id="leaderboard-list" class="leaderboard-list"></ol>
+            </div>
+          </div>
+
+          <footer id="my-rank" class="my-rank" aria-live="polite">
+            <strong class="my-rank-label">我</strong>
+            <span id="my-rank-position">加载中…</span>
+            <output id="my-rank-score"></output>
+          </footer>
+        </div>
+      </section>
+
+      <section
         id="settings-dialog"
         class="settings-overlay"
         role="dialog"
@@ -164,6 +238,9 @@
 
           <section class="launcher-picker" aria-label="击球手设置">
             <div id="launcher-grid" class="launcher-grid"></div>
+            <p class="best-distance">
+              历史最远飞行距离：<output id="best-distance">0米</output>
+            </p>
           </section>
         </div>
       </section>

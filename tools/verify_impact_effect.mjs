@@ -34,7 +34,7 @@ try {
   game.action();
 
   assert.equal(game.phase, "airborne");
-  assert.deepEqual(audio, ["swing", "hit"]);
+  assert.deepEqual(audio, ["swing", "hitBlackEagle"]);
   assert.ok(game.impactFlash);
   assert.equal(game.impactFlash.life, GameConfig.swing.impactFlashDuration);
   assert.equal(game.impactFlash.maxLife, GameConfig.swing.impactFlashDuration);

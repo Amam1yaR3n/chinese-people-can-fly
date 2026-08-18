@@ -93,7 +93,7 @@ try {
     assert.equal(game.powerUp.remainingDuration, 5);
     assert.equal(game.powerUp.exitSpeed, 160);
     assert.deepEqual(game.player.vel, { x: 160, y: 0 });
-    assert.deepEqual(audio, []);
+    assert.deepEqual(audio, ["pickupUfo"]);
 
     game.updateUfoFlight(2.5);
     assert.equal(game.powerUp.remainingDuration, 2.5);
@@ -284,15 +284,15 @@ try {
     frameTuple(MinePose.frame),
     atlasTuple(atlas.frames["obstacles/mine"].frame),
   );
-  assert.equal(FlyerPoses.ufo.frame.width * FlyerPoses.ufo.scale, 150);
-  assert.equal(FlyerPoses.ufo.frame.height * FlyerPoses.ufo.scale, 100);
+  assert.equal(FlyerPoses.ufo.frame.width * FlyerPoses.ufo.scale, 210);
+  assert.equal(FlyerPoses.ufo.frame.height * FlyerPoses.ufo.scale, 140);
   assert.equal(
     FlyerPoses.ufoLightsOn.frame.width * FlyerPoses.ufoLightsOn.scale,
-    150,
+    210,
   );
   assert.equal(
     FlyerPoses.ufoLightsOn.frame.height * FlyerPoses.ufoLightsOn.scale,
-    100,
+    140,
   );
   assert.equal(PickupPoses.ufo.frame.width * PickupPoses.ufo.scale, 66);
   assert.equal(PickupPoses.ufo.frame.height * PickupPoses.ufo.scale, 42);

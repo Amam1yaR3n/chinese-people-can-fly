@@ -27,10 +27,12 @@ export interface EffectSprites {
     HTMLImageElement,
   ];
   readonly humanCannonSmoke: HTMLImageElement;
+  readonly missileTailFlame: HTMLImageElement;
 }
 
 export interface BackgroundSprites {
   readonly farAtlas: HTMLImageElement;
+  readonly midground: HTMLImageElement;
   readonly groundTile: HTMLImageElement;
 }
 
@@ -74,9 +76,13 @@ const HUMAN_CANNON_FUSE_FLAME_PATHS = [
 ] as const;
 const HUMAN_CANNON_SMOKE_PATH =
   "./assets/effects/human-cannon-launch-smoke.png";
+const MISSILE_TAIL_FLAME_PATH =
+  "./assets/effects/missile-player-tail-flame.png";
 const BACKGROUND_FAR_ATLAS_PATH = "./assets/backgrounds/far-atlas.png";
+const BACKGROUND_MIDGROUND_PATH =
+  "./assets/backgrounds/china-mountain-forest-midground.png";
 const BACKGROUND_GROUND_TILE_PATH =
-  "./assets/backgrounds/ground-tile-v2.png";
+  "./assets/backgrounds/ground-tile-v8.png";
 
 const frame = (
   x: number,
@@ -310,17 +316,25 @@ export const loadMissileTruckSprites = async (): Promise<MissileTruckSprites | n
 
 export const loadEffectSprites = async (): Promise<EffectSprites | null> => {
   try {
-    const [impactFlash, fuseFlame1, fuseFlame2, humanCannonSmoke] =
+    const [
+      impactFlash,
+      fuseFlame1,
+      fuseFlame2,
+      humanCannonSmoke,
+      missileTailFlame,
+    ] =
       await Promise.all([
         loadImage(IMPACT_FLASH_PATH),
         loadImage(HUMAN_CANNON_FUSE_FLAME_PATHS[0]),
         loadImage(HUMAN_CANNON_FUSE_FLAME_PATHS[1]),
         loadImage(HUMAN_CANNON_SMOKE_PATH),
+        loadImage(MISSILE_TAIL_FLAME_PATH),
       ]);
     return {
       impactFlash,
       humanCannonFuseFlames: [fuseFlame1, fuseFlame2],
       humanCannonSmoke,
+      missileTailFlame,
     };
   } catch (error) {
     console.error(
@@ -333,11 +347,12 @@ export const loadEffectSprites = async (): Promise<EffectSprites | null> => {
 
 export const loadBackgroundSprites = async (): Promise<BackgroundSprites | null> => {
   try {
-    const [farAtlas, groundTile] = await Promise.all([
+    const [farAtlas, midground, groundTile] = await Promise.all([
       loadImage(BACKGROUND_FAR_ATLAS_PATH),
+      loadImage(BACKGROUND_MIDGROUND_PATH),
       loadImage(BACKGROUND_GROUND_TILE_PATH),
     ]);
-    return { farAtlas, groundTile };
+    return { farAtlas, midground, groundTile };
   } catch (error) {
     console.error(
       "Background sprites failed to load; using geometry fallback.",

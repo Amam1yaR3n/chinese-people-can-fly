@@ -12,6 +12,8 @@
     "verify:cannon-fuse": "node tools/verify_cannon_fuse_effect.mjs",
     "verify:impact": "node tools/verify_impact_effect.mjs",
     "verify:mine": "node tools/verify_mine_sprite.mjs",
+    "verify:leaderboard": "node tools/verify_leaderboard.mjs",
+    "verify:missile-flame": "node tools/verify_missile_tail_flame.mjs",
     "verify:ufo": "node tools/verify_ufo_gameplay.mjs"
   },
   "devDependencies": {

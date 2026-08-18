@@ -98,8 +98,9 @@ canvas {
   box-shadow: 0 0.16em 0 #142033;
 }
 
-.settings-button,
-.settings-close {
+.hud-icon-button,
+.settings-close,
+.leaderboard-close {
   display: grid;
   place-items: center;
   border: max(2px, 0.16vw) solid #142033;
@@ -109,7 +110,7 @@ canvas {
   -webkit-tap-highlight-color: transparent;
 }
 
-.settings-button {
+.hud-icon-button {
   position: relative;
   z-index: 11;
   flex: 0 0 auto;
@@ -126,17 +127,17 @@ canvas {
     background-color 120ms ease;
 }
 
-.settings-button:hover,
-.settings-button[aria-expanded="true"] {
+.hud-icon-button:hover,
+.hud-icon-button[aria-expanded="true"] {
   background: #ffd84d;
 }
 
-.settings-button:active {
+.hud-icon-button:active {
   translate: 0 0.1em;
   box-shadow: 0 0.02em 0 #142033;
 }
 
-.settings-button svg {
+.hud-icon-button svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -154,6 +155,16 @@ canvas {
 
 .settings-button svg .gear-hole {
   fill: #edf2f4;
+}
+
+.leaderboard-button svg {
+  fill: #aeb8c3;
+}
+
+.leaderboard-button svg .podium-number {
+  fill: none;
+  stroke: #edf2f4;
+  stroke-width: 1.9;
 }
 
 .settings-wrap {
@@ -199,15 +210,18 @@ canvas {
   display: none;
 }
 
-.settings-button:focus-visible,
+.hud-icon-button:focus-visible,
 .settings-close:focus-visible,
+.leaderboard-close:focus-visible,
+.leaderboard-retry:focus-visible,
 .volume-control input:focus-visible,
 .launcher-card:focus-visible {
   outline: max(3px, 0.22vw) solid #fffdf5;
   outline-offset: max(3px, 0.2vw);
 }
 
-.settings-overlay {
+.settings-overlay,
+.leaderboard-overlay {
   position: absolute;
   inset: 0;
   z-index: 10;
@@ -217,8 +231,273 @@ canvas {
   pointer-events: auto;
 }
 
-.settings-overlay:not([hidden]) {
+.settings-overlay:not([hidden]),
+.leaderboard-overlay:not([hidden]) {
   display: grid;
+}
+
+.leaderboard-overlay {
+  z-index: 12;
+}
+
+.leaderboard-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(10px, 1.35vw, 20px);
+  width: min(820px, 100%);
+  height: min(720px, 100%);
+  max-height: 100%;
+  padding: clamp(18px, 2.6vw, 36px) clamp(18px, 3vw, 44px);
+  border: max(3px, 0.3vw) solid #142033;
+  border-radius: clamp(18px, 2.4vw, 34px);
+  background: #fffdf5;
+  box-shadow: 0 clamp(7px, 0.8vw, 13px) 0 #142033;
+  color: #142033;
+}
+
+.leaderboard-close {
+  position: absolute;
+  top: clamp(-14px, -1vw, -9px);
+  right: clamp(-14px, -1vw, -9px);
+  z-index: 1;
+  width: clamp(44px, 4vw, 52px);
+  aspect-ratio: 1;
+  padding: 0 0 0.08em;
+  border-radius: 50%;
+  background: #ffd84d;
+  font-size: clamp(24px, 3.2vw, 42px);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.leaderboard-close:hover {
+  background: #ffbd3f;
+}
+
+.leaderboard-heading {
+  text-align: center;
+}
+
+.leaderboard-heading h2 {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 44px);
+  line-height: 1;
+}
+
+.leaderboard-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.leaderboard-status {
+  display: grid;
+  height: 100%;
+  min-height: 150px;
+  place-content: center;
+  justify-items: center;
+  gap: clamp(7px, 0.9vw, 12px);
+  padding: clamp(14px, 2vw, 28px);
+  text-align: center;
+}
+
+.leaderboard-status[hidden],
+.leaderboard-table[hidden],
+.leaderboard-retry[hidden] {
+  display: none;
+}
+
+.leaderboard-status strong {
+  font-size: clamp(18px, 2vw, 28px);
+  line-height: 1.25;
+}
+
+.leaderboard-status span {
+  max-width: 32em;
+  color: #657683;
+  font-size: clamp(12px, 1.25vw, 17px);
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.leaderboard-retry {
+  margin-top: clamp(4px, 0.6vw, 8px);
+  padding: 0.5em 1.8em 0.58em;
+  border: max(2px, 0.16vw) solid #142033;
+  border-radius: 999px;
+  background: #ffd84d;
+  box-shadow: 0 0.12em 0 #142033;
+  color: #142033;
+  cursor: pointer;
+  font: inherit;
+  font-size: clamp(13px, 1.3vw, 18px);
+  font-weight: 900;
+}
+
+.leaderboard-retry:hover {
+  background: #ffbd3f;
+}
+
+.leaderboard-retry:active {
+  translate: 0 0.08em;
+  box-shadow: 0 0.02em 0 #142033;
+}
+
+.leaderboard-table {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: max(2px, 0.16vw) solid #cbd8de;
+  border-radius: clamp(12px, 1.4vw, 20px);
+  background: #fff;
+}
+
+.leaderboard-columns,
+.rank-row {
+  display: grid;
+  grid-template-columns: clamp(52px, 6vw, 78px) minmax(0, 1fr) clamp(90px, 10vw, 138px);
+  align-items: center;
+}
+
+.leaderboard-columns {
+  padding: 0.55em clamp(10px, 1.25vw, 18px);
+  border-bottom: max(2px, 0.14vw) solid #dce8eb;
+  background: #edf2f4;
+  color: #657683;
+  font-size: clamp(10px, 1vw, 14px);
+  font-weight: 900;
+}
+
+.leaderboard-columns span:last-child {
+  text-align: right;
+}
+
+.leaderboard-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  scrollbar-color: #8fa4ae transparent;
+  scrollbar-width: thin;
+}
+
+.rank-row {
+  min-height: clamp(44px, 4.8vw, 62px);
+  padding: clamp(5px, 0.6vw, 8px) clamp(10px, 1.25vw, 18px);
+  border-bottom: 1px solid #dce8eb;
+  font-size: clamp(12px, 1.25vw, 18px);
+  font-weight: 900;
+}
+
+.rank-row:last-child {
+  border-bottom: 0;
+}
+
+.rank-row.is-mine {
+  background: #fff3b5;
+  box-shadow: inset max(3px, 0.22vw) 0 0 #ffbd3f;
+}
+
+.rank-position {
+  display: grid;
+  width: clamp(28px, 2.8vw, 38px);
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  color: #142033;
+}
+
+.rank-row.is-top-1 .rank-position {
+  border: max(2px, 0.14vw) solid #b87809;
+  background: #ffd84d;
+}
+
+.rank-row.is-top-2 .rank-position {
+  border: max(2px, 0.14vw) solid #7c8b94;
+  background: #dce8eb;
+}
+
+.rank-row.is-top-3 .rank-position {
+  border: max(2px, 0.14vw) solid #98532f;
+  background: #d89568;
+}
+
+.rank-player {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: clamp(8px, 0.9vw, 13px);
+}
+
+.rank-avatar {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: clamp(30px, 3.3vw, 44px);
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  border: max(2px, 0.13vw) solid #142033;
+  border-radius: 50%;
+  background: #dce8eb;
+  color: #657683;
+  font-size: clamp(11px, 1.2vw, 16px);
+}
+
+.rank-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rank-nickname {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-score {
+  color: #d16a35;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.my-rank {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(10px, 1.3vw, 18px);
+  min-height: clamp(46px, 5vw, 64px);
+  padding: clamp(8px, 0.9vw, 12px) clamp(14px, 1.8vw, 24px);
+  border: max(2px, 0.18vw) solid #142033;
+  border-radius: clamp(12px, 1.4vw, 20px);
+  background: #ffd84d;
+  box-shadow: 0 0.12em 0 #142033;
+  font-size: clamp(13px, 1.4vw, 20px);
+  font-weight: 900;
+}
+
+.my-rank-label {
+  display: grid;
+  width: clamp(30px, 3vw, 42px);
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  background: #fffdf5;
+}
+
+.my-rank output {
+  color: #9d4e29;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .settings-panel {
@@ -355,7 +634,9 @@ canvas {
 .launcher-picker {
   display: grid;
   min-width: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
   align-items: stretch;
+  gap: clamp(10px, 1.2vw, 18px);
 }
 
 .launcher-grid {
@@ -438,9 +719,50 @@ canvas {
   line-height: 1.15;
 }
 
+.best-distance {
+  margin: 0;
+  color: #142033;
+  font-size: clamp(13px, 1.35vw, 20px);
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.best-distance output {
+  color: #d16a35;
+}
+
 @media (max-height: 520px) {
-  .settings-overlay {
+  .settings-overlay,
+  .leaderboard-overlay {
     padding: 12px 20px;
+  }
+
+  .leaderboard-panel {
+    gap: 7px;
+    padding: 12px 24px;
+  }
+
+  .leaderboard-close {
+    top: 4px;
+    right: 4px;
+  }
+
+  .leaderboard-heading h2 {
+    font-size: clamp(21px, 2.7vw, 30px);
+  }
+
+  .rank-row {
+    min-height: 38px;
+    padding-block: 3px;
+  }
+
+  .rank-avatar {
+    width: 28px;
+  }
+
+  .my-rank {
+    min-height: 40px;
+    padding-block: 5px;
   }
 
   .settings-panel {
@@ -467,10 +789,14 @@ canvas {
   .launcher-card-icon img {
     height: clamp(46px, 7.5vw, 72px);
   }
+
+  .launcher-picker {
+    gap: 7px;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .settings-button svg {
+  .hud-icon-button svg {
     transition: transform 180ms ease;
   }
 
