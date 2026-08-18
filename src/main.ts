@@ -13,6 +13,7 @@ import {
   type ProgressV1,
 } from "./game/progress";
 import {
+  loadBackgroundSprites,
   loadCharacterSprites,
   loadEffectSprites,
   loadHumanCannonSprites,
@@ -665,6 +666,7 @@ const startGame = async (): Promise<void> => {
     humanCannonSprites,
     missileTruckSprites,
     effectSprites,
+    backgroundSprites,
   ] =
     await Promise.all([
       loadCharacterSprites(),
@@ -672,6 +674,7 @@ const startGame = async (): Promise<void> => {
       loadHumanCannonSprites(),
       loadMissileTruckSprites(),
       loadEffectSprites(),
+      loadBackgroundSprites(),
     ]);
   game = new Game(
     (event) => audio.play(event),
@@ -681,6 +684,7 @@ const startGame = async (): Promise<void> => {
     missileTruckSprites,
     progress.selectedLauncher,
     effectSprites,
+    backgroundSprites,
   );
   lastTimestamp = performance.now();
   resizeCanvas();

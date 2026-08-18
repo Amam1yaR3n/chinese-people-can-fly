@@ -95,6 +95,25 @@ export default defineConfig({
           );
         }
 
+        const backgroundDirectory = resolve(
+          import.meta.dirname,
+          "dist/assets/backgrounds",
+        );
+        mkdirSync(backgroundDirectory, { recursive: true });
+        for (const backgroundFile of [
+          "far-atlas.png",
+          "ground-tile-v2.png",
+        ]) {
+          copyFileSync(
+            resolve(
+              import.meta.dirname,
+              "assets/backgrounds",
+              backgroundFile,
+            ),
+            resolve(backgroundDirectory, backgroundFile),
+          );
+        }
+
         const audioDirectory = resolve(import.meta.dirname, "dist/assets/audio");
         mkdirSync(audioDirectory, { recursive: true });
         for (const audioFile of [

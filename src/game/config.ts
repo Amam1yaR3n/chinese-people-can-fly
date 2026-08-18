@@ -157,6 +157,7 @@ export const GameConfig = {
     signClearance: 12,
     width: 7,
     height: 2.8,
+    spriteOutlineWidth: 1.5,
     horizontalMultiplier: 1.1,
     minimumHorizontalBoost: 120,
     verticalBoost: 90,
@@ -247,6 +248,22 @@ export const GameConfig = {
     verticalFollowScreenY: 260,
     shakeDuration: 0.28,
     shakeStrength: 10,
+  },
+
+  background: {
+    skyColor: "#a9ddeb",
+    sunScreen: { x: 1410, y: 190 },
+    cloudParallax: 0.06,
+    cloudCycleWidth: 2300,
+    cloudScreens: [
+      { x: 180, y: 155 },
+      { x: 680, y: 300 },
+      { x: 1120, y: 420 },
+      { x: 1540, y: 350 },
+    ],
+    groundSourceTop: 630,
+    groundSurfaceY: 668,
+    groundTileScale: 1,
   },
 
   palette: {

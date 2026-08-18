@@ -1,11 +1,15 @@
 import { GameConfig } from "./config";
 import type { LauncherId } from "./launchers";
 import {
+  BackgroundPoses,
   BatterFrames,
+  drawAtlasPose,
+  drawOutlinedSpritePose,
   drawSpritePose,
   FlyerPoses,
   MinePose,
   PickupPoses,
+  type BackgroundSprites,
   type CharacterSprites,
   type EffectSprites,
   type HumanCannonSprites,
@@ -33,6 +37,9 @@ const clamp = (value: number, minimum: number, maximum: number): number =>
 
 const lerp = (from: number, to: number, amount: number): number =>
   from + (to - from) * amount;
+
+const wrap = (value: number, period: number): number =>
+  ((value % period) + period) % period;
 
 const DISTANCE_EPSILON = 1e-7;
 const TIME_EPSILON = 1e-7;
@@ -182,6 +189,7 @@ export class Game {
     private readonly missileTruckSprites: MissileTruckSprites | null,
     private launcherId: LauncherId,
     private readonly effectSprites: EffectSprites | null = null,
+    private readonly backgroundSprites: BackgroundSprites | null = null,
   ) {
     this.player = this.createPlayer();
     this.swing = this.createSwing();
@@ -308,11 +316,8 @@ export class Game {
   }
 
   render(context: CanvasRenderingContext2D): void {
-    const { logicalWidth, logicalHeight, palette } = GameConfig;
-    const skyGradient = context.createLinearGradient(0, 0, 0, logicalHeight);
-    skyGradient.addColorStop(0, palette.sky);
-    skyGradient.addColorStop(1, palette.skyDeep);
-    context.fillStyle = skyGradient;
+    const { logicalWidth, logicalHeight } = GameConfig;
+    context.fillStyle = GameConfig.background.skyColor;
     context.fillRect(0, 0, logicalWidth, logicalHeight);
 
     this.drawSky(context);
@@ -1400,19 +1405,56 @@ export class Game {
   }
 
   private drawSky(context: CanvasRenderingContext2D): void {
+    if (this.backgroundSprites) {
+      const { farAtlas } = this.backgroundSprites;
+      drawAtlasPose(
+        context,
+        farAtlas,
+        BackgroundPoses.sun,
+        GameConfig.background.sunScreen,
+      );
+
+      const {
+        cloudCycleWidth,
+        cloudParallax,
+        cloudScreens,
+      } = GameConfig.background;
+      const scroll =
+        this.camera.x * GameConfig.pixelsPerMeter * cloudParallax;
+      for (let index = 0; index < BackgroundPoses.clouds.length; index += 1) {
+        const pose = BackgroundPoses.clouds[index];
+        const base = cloudScreens[index];
+        const halfWidth = (pose.frame.width * pose.scale) / 2;
+        const x =
+          wrap(base.x - scroll + halfWidth, cloudCycleWidth) - halfWidth;
+        if (
+          x < -halfWidth ||
+          x > GameConfig.logicalWidth + halfWidth
+        ) {
+          continue;
+        }
+        drawAtlasPose(context, farAtlas, pose, { x, y: base.y });
+      }
+      return;
+    }
+
+    this.drawSkyFallback(context);
+  }
+
+  private drawSkyFallback(context: CanvasRenderingContext2D): void {
     context.fillStyle = GameConfig.palette.sun;
     context.beginPath();
     context.arc(GameConfig.logicalWidth - 180, 155, 58, 0, Math.PI * 2);
     context.fill();
 
     context.fillStyle = `${GameConfig.palette.cloud}cc`;
-    this.drawCloud(
+    this.drawCloudFallback(
       context,
       GameConfig.logicalWidth - 410 - this.camera.x * 0.32,
       170,
       1,
     );
-    this.drawCloud(
+    this.drawCloudFallback(
       context,
       GameConfig.logicalWidth - 1090 - this.camera.x * 0.2,
       290,
@@ -1420,7 +1462,7 @@ export class Game {
     );
   }
 
-  private drawCloud(
+  private drawCloudFallback(
     context: CanvasRenderingContext2D,
     x: number,
     y: number,
@@ -2246,6 +2288,52 @@ export class Game {
   }
 
   private drawGround(context: CanvasRenderingContext2D): void {
+    if (this.backgroundSprites) {
+      const { logicalHeight, logicalWidth } = GameConfig;
+      const {
+        groundSourceTop,
+        groundSurfaceY,
+        groundTileScale,
+      } = GameConfig.background;
+      const image = this.backgroundSprites.groundTile;
+      const groundScreenY = this.worldToScreenY(0);
+      if (groundScreenY >= logicalHeight) return;
+
+      const sourceHeight = image.height - groundSourceTop;
+      const tileWidth = image.width * groundTileScale;
+      const tileHeight = sourceHeight * groundTileScale;
+      const drawY =
+        groundScreenY -
+        (groundSurfaceY - groundSourceTop) * groundTileScale;
+      const scroll = wrap(
+        this.camera.x * GameConfig.pixelsPerMeter,
+        tileWidth,
+      );
+
+      for (
+        let x = -scroll;
+        x < logicalWidth;
+        x += tileWidth
+      ) {
+        context.drawImage(
+          image,
+          0,
+          groundSourceTop,
+          image.width,
+          sourceHeight,
+          x,
+          drawY,
+          tileWidth,
+          tileHeight,
+        );
+      }
+      return;
+    }
+
+    this.drawGroundFallback(context);
+  }
+
+  private drawGroundFallback(context: CanvasRenderingContext2D): void {
     const { logicalWidth, logicalHeight, palette } = GameConfig;
     const groundScreenY = this.worldToScreenY(0);
     if (groundScreenY >= logicalHeight) return;
@@ -2310,7 +2398,14 @@ export class Game {
       const groundY = this.worldToScreenY(0);
 
       if (this.sprites) {
-        drawSpritePose(context, this.sprites, MinePose, { x, y: groundY });
+        const outlineWidth = GameConfig.mine.spriteOutlineWidth;
+        drawOutlinedSpritePose(
+          context,
+          this.sprites,
+          MinePose,
+          { x, y: groundY - outlineWidth },
+          { color: GameConfig.palette.ink, width: outlineWidth },
+        );
         continue;
       }
 
@@ -2341,7 +2436,7 @@ export class Game {
       );
       context.fill();
       context.strokeStyle = GameConfig.palette.mineDark;
-      context.lineWidth = 4;
+      context.lineWidth = 4 + GameConfig.mine.spriteOutlineWidth;
       context.stroke();
     }
   }

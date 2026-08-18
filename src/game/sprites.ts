@@ -29,7 +29,12 @@ export interface EffectSprites {
   readonly humanCannonSmoke: HTMLImageElement;
 }
 
-interface AtlasFrame {
+export interface BackgroundSprites {
+  readonly farAtlas: HTMLImageElement;
+  readonly groundTile: HTMLImageElement;
+}
+
+export interface AtlasFrame {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -69,6 +74,9 @@ const HUMAN_CANNON_FUSE_FLAME_PATHS = [
 ] as const;
 const HUMAN_CANNON_SMOKE_PATH =
   "./assets/effects/human-cannon-launch-smoke.png";
+const BACKGROUND_FAR_ATLAS_PATH = "./assets/backgrounds/far-atlas.png";
+const BACKGROUND_GROUND_TILE_PATH =
+  "./assets/backgrounds/ground-tile-v2.png";
 
 const frame = (
   x: number,
@@ -76,6 +84,39 @@ const frame = (
   width: number,
   height: number,
 ): AtlasFrame => ({ x, y, width, height });
+
+export const BackgroundPoses = {
+  sun: {
+    frame: frame(100, 70, 360, 360),
+    anchor: { x: 180, y: 180 },
+    scale: 0.52,
+  },
+  clouds: [
+    {
+      frame: frame(590, 80, 540, 320),
+      anchor: { x: 270, y: 160 },
+      scale: 0.65,
+    },
+    {
+      frame: frame(1210, 170, 390, 240),
+      anchor: { x: 195, y: 120 },
+      scale: 0.58,
+    },
+    {
+      frame: frame(20, 480, 640, 340),
+      anchor: { x: 320, y: 170 },
+      scale: 0.6,
+    },
+    {
+      frame: frame(630, 480, 610, 360),
+      anchor: { x: 305, y: 180 },
+      scale: 0.56,
+    },
+  ],
+} as const satisfies {
+  readonly sun: SpritePose;
+  readonly clouds: readonly SpritePose[];
+};
 
 export const FlyerPoses = {
   airborne: {
@@ -121,7 +162,7 @@ export const MinePose = {
   frame: frame(616, 3992, 1098, 411),
   // The visible bottom edge sits on the ground; the remaining pixels are padding.
   anchor: { x: 549, y: 399 },
-  scale: 0.052,
+  scale: 0.052 * 1.2,
 } as const satisfies SpritePose;
 
 export const PickupPoses = {
@@ -290,6 +331,45 @@ export const loadEffectSprites = async (): Promise<EffectSprites | null> => {
   }
 };
 
+export const loadBackgroundSprites = async (): Promise<BackgroundSprites | null> => {
+  try {
+    const [farAtlas, groundTile] = await Promise.all([
+      loadImage(BACKGROUND_FAR_ATLAS_PATH),
+      loadImage(BACKGROUND_GROUND_TILE_PATH),
+    ]);
+    return { farAtlas, groundTile };
+  } catch (error) {
+    console.error(
+      "Background sprites failed to load; using geometry fallback.",
+      error,
+    );
+    return null;
+  }
+};
+
+export const drawAtlasPose = (
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  pose: SpritePose,
+  screen: Vec2,
+): void => {
+  const { frame: source, anchor, scale } = pose;
+  context.save();
+  context.translate(screen.x, screen.y);
+  context.drawImage(
+    image,
+    source.x,
+    source.y,
+    source.width,
+    source.height,
+    -anchor.x * scale,
+    -anchor.y * scale,
+    source.width * scale,
+    source.height * scale,
+  );
+  context.restore();
+};
+
 export const drawSpritePose = (
   context: CanvasRenderingContext2D,
   sprites: CharacterSprites,
@@ -313,5 +393,33 @@ export const drawSpritePose = (
     source.width * scale,
     source.height * scale,
   );
+  context.restore();
+};
+
+export const drawOutlinedSpritePose = (
+  context: CanvasRenderingContext2D,
+  sprites: CharacterSprites,
+  pose: SpritePose,
+  screen: Vec2,
+  outline: { readonly color: string; readonly width: number },
+): void => {
+  const offsets = [-outline.width, 0, outline.width];
+
+  context.save();
+  context.shadowBlur = 0;
+  context.shadowColor = outline.color;
+  for (const offsetY of offsets) {
+    for (const offsetX of offsets) {
+      if (offsetX === 0 && offsetY === 0) continue;
+      context.shadowOffsetX = offsetX;
+      context.shadowOffsetY = offsetY;
+      drawSpritePose(context, sprites, pose, screen);
+    }
+  }
+
+  context.shadowColor = "transparent";
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 0;
+  drawSpritePose(context, sprites, pose, screen);
   context.restore();
 };
