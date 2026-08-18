@@ -22,78 +22,95 @@
         <output id="distance" aria-label="当前最远距离">0 米</output>
         <div class="hud-actions">
           <output id="score" aria-label="当前分数">0 分</output>
-          <button
-            id="settings-button"
-            class="settings-button"
-            type="button"
-            aria-label="打开游戏设置"
-            aria-controls="settings-dialog"
-            aria-expanded="false"
-          >
-            <svg viewBox="0 0 28 28" aria-hidden="true">
-              <g>
-                <rect x="11.7" y="1.2" width="4.6" height="7.2" rx="1.2" />
-                <rect
-                  x="11.7"
-                  y="1.2"
-                  width="4.6"
-                  height="7.2"
-                  rx="1.2"
-                  transform="rotate(45 14 14)"
-                />
-                <rect
-                  x="11.7"
-                  y="1.2"
-                  width="4.6"
-                  height="7.2"
-                  rx="1.2"
-                  transform="rotate(90 14 14)"
-                />
-                <rect
-                  x="11.7"
-                  y="1.2"
-                  width="4.6"
-                  height="7.2"
-                  rx="1.2"
-                  transform="rotate(135 14 14)"
-                />
-                <rect
-                  x="11.7"
-                  y="1.2"
-                  width="4.6"
-                  height="7.2"
-                  rx="1.2"
-                  transform="rotate(180 14 14)"
-                />
-                <rect
-                  x="11.7"
-                  y="1.2"
-                  width="4.6"
-                  height="7.2"
-                  rx="1.2"
-                  transform="rotate(225 14 14)"
-                />
-                <rect
-                  x="11.7"
-                  y="1.2"
-                  width="4.6"
-                  height="7.2"
-                  rx="1.2"
-                  transform="rotate(270 14 14)"
-                />
-                <rect
-                  x="11.7"
-                  y="1.2"
-                  width="4.6"
-                  height="7.2"
-                  rx="1.2"
-                  transform="rotate(315 14 14)"
-                />
-                <circle cx="14" cy="14" r="8.3" />
-                <circle class="gear-hole" cx="14" cy="14" r="3.4" />
-              </g>
-            </svg>
-          </button>
+          <span class="settings-wrap">
+            <button
+              id="settings-button"
+              class="settings-button"
+              type="button"
+              aria-label="打开游戏设置"
+              aria-controls="settings-dialog"
+              aria-expanded="false"
+            >
+              <svg viewBox="0 0 28 28" aria-hidden="true">
+                <g>
+                  <rect x="11.7" y="1.2" width="4.6" height="7.2" rx="1.2" />
+                  <rect
+                    x="11.7"
+                    y="1.2"
+                    width="4.6"
+                    height="7.2"
+                    rx="1.2"
+                    transform="rotate(45 14 14)"
+                  />
+                  <rect
+                    x="11.7"
+                    y="1.2"
+                    width="4.6"
+                    height="7.2"
+                    rx="1.2"
+                    transform="rotate(90 14 14)"
+                  />
+                  <rect
+                    x="11.7"
+                    y="1.2"
+                    width="4.6"
+                    height="7.2"
+                    rx="1.2"
+                    transform="rotate(135 14 14)"
+                  />
+                  <rect
+                    x="11.7"
+                    y="1.2"
+                    width="4.6"
+                    height="7.2"
+                    rx="1.2"
+                    transform="rotate(180 14 14)"
+                  />
+                  <rect
+                    x="11.7"
+                    y="1.2"
+                    width="4.6"
+                    height="7.2"
+                    rx="1.2"
+                    transform="rotate(225 14 14)"
+                  />
+                  <rect
+                    x="11.7"
+                    y="1.2"
+                    width="4.6"
+                    height="7.2"
+                    rx="1.2"
+                    transform="rotate(270 14 14)"
+                  />
+                  <rect
+                    x="11.7"
+                    y="1.2"
+                    width="4.6"
+                    height="7.2"
+                    rx="1.2"
+                    transform="rotate(315 14 14)"
+                  />
+                  <circle cx="14" cy="14" r="8.3" />
+                  <circle class="gear-hole" cx="14" cy="14" r="3.4" />
+                </g>
+              </svg>
+            </button>
+            <small
+              id="unlock-notice"
+              class="unlock-notice"
+              aria-hidden="true"
+              hidden
+            >
+              <svg
+                class="unlock-notice-tail"
+                viewBox="0 0 24 20"
+                aria-hidden="true"
+              >
+                <path d="M2 18 L12 2 L22 18" />
+              </svg>
+              <span>新发射装置解锁！</span>
+            </small>
+          </span>
         </div>
       </header>
 
@@ -154,7 +171,29 @@
       <section id="result" class="result" aria-live="assertive" hidden>
         <span>本局得分</span>
         <strong id="result-score">0 分</strong>
-        <small id="result-distance">最远距离 0 米</small>
+        <small id="result-distance">你飞了 0 米</small>
+        <p id="result-message" class="result-message"></p>
+      </section>
+
+      <section
+        id="tutorial-dialog"
+        class="tutorial-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="新手教程"
+        hidden
+      >
+        <div class="tutorial-panel">
+          <p class="tutorial-line">在即将落地的时候点击屏幕即可触发打水漂</p>
+          <p class="tutorial-line">借此飞得更远吧！</p>
+          <button
+            id="tutorial-close"
+            class="tutorial-close"
+            type="button"
+          >
+            开始游戏
+          </button>
+        </div>
       </section>
 
       <section id="portrait-overlay" class="portrait-overlay" hidden>

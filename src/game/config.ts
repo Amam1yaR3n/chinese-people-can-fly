@@ -1,5 +1,24 @@
 const DEG = Math.PI / 180;
 
+// 飞行角色与四大装置的统一视觉放大倍率。仅改变绘制尺寸，不改变物理判定
+// （拾取半径、地雷碰撞、弹弓拖拽热区等）；附着在装置上的世界锚点按锚点等比放大。
+const VISUAL_SCALE = 1.4;
+
+const WHEEL_WORLD = { x: 0, y: -5.7 };
+const MUZZLE_WORLD = { x: 13.35, y: -16.42 };
+const FUSE_WORLD = { x: -8.2, y: -12.3 };
+const POWER_BAR_WORLD = { x: 4.62, y: -27.18 };
+const MISSILE_LOADED_WORLD = { x: 5.25, y: -20.4 };
+
+const scaleAround = (
+  anchor: { readonly x: number; readonly y: number },
+  point: { readonly x: number; readonly y: number },
+  factor: number,
+): { x: number; y: number } => ({
+  x: anchor.x + (point.x - anchor.x) * factor,
+  y: anchor.y + (point.y - anchor.y) * factor,
+});
+
 export const GameConfig = {
   logicalWidth: 1600,
   logicalHeight: 900,
@@ -10,6 +29,7 @@ export const GameConfig = {
   followScreenX: 540,
   fixedStep: 1 / 120,
   maxFrameDelta: 0.05,
+  visualScale: VISUAL_SCALE,
 
   initialFallGravity: 38,
   gravity: 38,
@@ -37,23 +57,24 @@ export const GameConfig = {
     frameCount: 8,
     followThroughStart: 0.2,
     thickness: 1.2,
-    launchWindowTopY: -28,
-    launchWindowBottomY: -9,
+    // 击飞判定窗口：角色中心落在这个竖直区间内时按下即命中（区间越大越容易）。
+    launchWindowTopY: -40,
+    launchWindowBottomY: -5,
     impactFlashDuration: 0.14,
     impactFlashRadius: 30.8,
   },
 
   slingshot: {
     forkWorldX: 23.333,
-    frameSize: 220,
+    frameSize: 220 * VISUAL_SCALE,
     frameTopSliceRatio: 0.52,
     backTipWorld: { x: 27.7, y: -28.35 },
     frontTipWorld: { x: 19.08, y: -28.35 },
     restPouchWorld: { x: 3.6, y: -25.4 },
     seatedOffset: { x: 30.5, y: -14.4 },
-    seatedSize: 97,
-    pouchWidth: 54,
-    pouchHeight: 29,
+    seatedSize: 97 * VISUAL_SCALE,
+    pouchWidth: 54 * VISUAL_SCALE,
+    pouchHeight: 29 * VISUAL_SCALE,
     hotspotRadius: 108,
     maximumPull: 150,
     minimumPull: 36,
@@ -69,32 +90,50 @@ export const GameConfig = {
   },
 
   humanCannon: {
-    wheelWorld: { x: 0, y: -5.7 },
-    muzzleWorld: { x: 13.35, y: -16.42 },
-    fuseWorld: { x: -8.2, y: -12.3 },
-    powerBarWorld: { x: 4.62, y: -27.18 },
+    wheelWorld: WHEEL_WORLD,
+    muzzleWorld: scaleAround(WHEEL_WORLD, MUZZLE_WORLD, VISUAL_SCALE),
+    fuseWorld: scaleAround(WHEEL_WORLD, FUSE_WORLD, VISUAL_SCALE),
+    powerBarWorld: scaleAround(WHEEL_WORLD, POWER_BAR_WORLD, VISUAL_SCALE),
     loadedAnchor: { x: 558, y: 776 },
     emptyAnchor: { x: 500, y: 560 },
-    spriteScale: 0.123,
-    powerBarWidth: 160,
-    powerBarHeight: 20,
+    spriteScale: 0.123 * VISUAL_SCALE,
+    powerBarWidth: 160 * VISUAL_SCALE,
+    powerBarHeight: 20 * VISUAL_SCALE,
     sweepDuration: 0.4,
+    fuseFlameSize: 48,
+    fuseFlameFrameDuration: 0.12,
+    fuseFlameAnchor: { x: 128, y: 224 },
+    // Let the bottom of the flame sit slightly inside the fuse tip.
+    fuseFlameOffset: { x: 2, y: 3 },
     minimumSpeed: 50,
     maximumSpeed: 220,
     launchAngle: 26 * DEG,
     recoilDuration: 0.45,
-    recoilDistance: 5,
+    recoilDistance: 5 * VISUAL_SCALE,
     smokeDuration: 0.65,
+    // The source image's left-center tip stays pinned to the cannon muzzle.
+    smokeAnchor: { x: 32, y: 256 },
+    smokeStartWidth: 92 * VISUAL_SCALE,
+    smokeEndWidth: 122 * VISUAL_SCALE,
+    smokeTravelDistance: 30 * VISUAL_SCALE,
   },
 
   missileTruck: {
     groundWorld: { x: 0, y: 0 },
     emptyAnchor: { x: 200, y: 620 },
-    emptyScale: 0.25,
+    emptyScale: 0.25 * VISUAL_SCALE,
     loadedAnchor: { x: 319, y: 973 },
-    loadedScale: 0.15867,
-    loadedWorld: { x: 5.25, y: -20.4 },
-    launchWorld: { x: 5.25, y: -20.4 },
+    loadedScale: 0.15867 * VISUAL_SCALE,
+    loadedWorld: scaleAround(
+      { x: 0, y: 0 },
+      MISSILE_LOADED_WORLD,
+      VISUAL_SCALE,
+    ),
+    launchWorld: scaleAround(
+      { x: 0, y: 0 },
+      MISSILE_LOADED_WORLD,
+      VISUAL_SCALE,
+    ),
     rackAngle: 26 * DEG,
     launchSpeed: 260,
     launchAngle: 22 * DEG,
@@ -176,24 +215,25 @@ export const GameConfig = {
       duration: 3.5,
       speed: 150,
       exitSpeed: 120,
-      trailExhaustOffsetX: 43,
-      trailEngineOffsetY: 4.5,
-      trailWidth: 6,
-      trailPuffSpacing: 7,
-      trailPuffRadius: 5.5,
+      trailExhaustOffsetX: 43 * VISUAL_SCALE,
+      trailEngineOffsetY: 4.5 * VISUAL_SCALE,
+      trailWidth: 6 * VISUAL_SCALE,
+      trailPuffSpacing: 7 * VISUAL_SCALE,
+      trailPuffRadius: 5.5 * VISUAL_SCALE,
     },
     ufo: {
       duration: 5,
       speed: 120,
       exitSpeed: 120,
-      displayWidth: 25,
-      displayHeight: 50 / 3,
+      displayWidth: 25 * VISUAL_SCALE,
+      displayHeight: (50 / 3) * VISUAL_SCALE,
       lightBlinkInterval: 0.18,
+      // 磁吸收集的目标点，不随视觉缩放。
       emitterOffsetY: 5.5,
-      beamTopWidth: 5.5,
+      beamTopWidth: 5.5 * VISUAL_SCALE,
       beamSpreadAngle: Math.PI / 18,
-      beamTopCapHeight: 1.1,
-      beamGroundCapHeight: 2.1,
+      beamTopCapHeight: 1.1 * VISUAL_SCALE,
+      beamGroundCapHeight: 2.1 * VISUAL_SCALE,
     },
   },
 

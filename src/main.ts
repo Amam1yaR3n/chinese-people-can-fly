@@ -27,6 +27,9 @@ interface VolumeSettings {
 }
 
 const VOLUME_STORAGE_KEY = "chinese-people-can-fly:volume-settings";
+const TUTORIAL_STORAGE_KEY = "chinese-people-can-fly:tutorial-shown";
+const UNLOCK_NOTICE_STORAGE_KEY =
+  "chinese-people-can-fly:launcher-unlock-notice";
 const DEFAULT_VOLUME_SETTINGS: VolumeSettings = {
   music: 48,
   effects: 72,
@@ -66,13 +69,55 @@ const saveVolumeSettings = (settings: VolumeSettings): void => {
   }
 };
 
+const hasSeenTutorial = (): boolean => {
+  try {
+    return window.localStorage.getItem(TUTORIAL_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const markTutorialSeen = (): void => {
+  try {
+    window.localStorage.setItem(TUTORIAL_STORAGE_KEY, "1");
+  } catch {
+    // The current session keeps the tutorial dismissed once closed.
+  }
+};
+
+const loadUnlockNoticePending = (): boolean => {
+  try {
+    return window.localStorage.getItem(UNLOCK_NOTICE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const saveUnlockNoticePending = (pending: boolean): void => {
+  try {
+    if (pending) {
+      window.localStorage.setItem(UNLOCK_NOTICE_STORAGE_KEY, "1");
+    } else {
+      window.localStorage.removeItem(UNLOCK_NOTICE_STORAGE_KEY);
+    }
+  } catch {
+    // The current session still reflects the pending state in memory.
+  }
+};
+
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 const distanceOutput = document.querySelector<HTMLOutputElement>("#distance");
 const scoreOutput = document.querySelector<HTMLOutputElement>("#score");
 const resultPanel = document.querySelector<HTMLElement>("#result");
 const resultScore = document.querySelector<HTMLElement>("#result-score");
 const resultDistance = document.querySelector<HTMLElement>("#result-distance");
+const resultMessage = document.querySelector<HTMLElement>("#result-message");
 const portraitOverlay = document.querySelector<HTMLElement>("#portrait-overlay");
+const tutorialDialog = document.querySelector<HTMLElement>("#tutorial-dialog");
+const tutorialClose = document.querySelector<HTMLButtonElement>(
+  "#tutorial-close",
+);
+const unlockNotice = document.querySelector<HTMLElement>("#unlock-notice");
 const settingsButton = document.querySelector<HTMLButtonElement>(
   "#settings-button",
 );
@@ -101,7 +146,11 @@ if (
   !resultPanel ||
   !resultScore ||
   !resultDistance ||
+  !resultMessage ||
   !portraitOverlay ||
+  !tutorialDialog ||
+  !tutorialClose ||
+  !unlockNotice ||
   !settingsButton ||
   !settingsDialog ||
   !settingsClose ||
@@ -131,12 +180,16 @@ let lastTimestamp = performance.now();
 let hidden = document.hidden;
 let portraitPaused = false;
 let settingsOpen = false;
+let tutorialOpen = false;
+let unlockNoticePending = false;
 let gameEnded = false;
 let musicPreviewTimer: number | null = null;
 let activeLauncherPointerId: number | null = null;
 
 const updateAudioPause = (): void => {
-  audio.setPaused(hidden || portraitPaused || settingsOpen || gameEnded);
+  audio.setPaused(
+    hidden || portraitPaused || settingsOpen || tutorialOpen || gameEnded,
+  );
 };
 
 const renderVolumeControl = (
@@ -267,6 +320,43 @@ const setSettingsOpen = (open: boolean): void => {
   settingsButton.focus({ preventScroll: true });
 };
 
+const setTutorialOpen = (open: boolean): void => {
+  if (tutorialOpen === open) return;
+  tutorialOpen = open;
+  tutorialDialog.hidden = !open;
+  document.body.toggleAttribute("data-tutorial-open", open);
+  accumulator = 0;
+
+  if (open) {
+    tutorialClose.focus({ preventScroll: true });
+    return;
+  }
+
+  markTutorialSeen();
+  settingsButton.focus({ preventScroll: true });
+};
+
+const hasNewlyUnlockedLauncher = (
+  previousBestDistance: number,
+  nextBestDistance: number,
+): boolean =>
+  LAUNCHERS.some(
+    (launcher) =>
+      launcher.unlockDistance > previousBestDistance &&
+      launcher.unlockDistance <= nextBestDistance,
+  );
+
+const setUnlockNoticeVisible = (visible: boolean): void => {
+  unlockNotice.hidden = !visible;
+};
+
+const dismissUnlockNotice = (): void => {
+  if (!unlockNoticePending) return;
+  unlockNoticePending = false;
+  saveUnlockNoticePending(false);
+  setUnlockNoticeVisible(false);
+};
+
 renderVolumeControl(
   musicVolumeInput,
   musicVolumeOutput,
@@ -314,14 +404,59 @@ const updateOutput = (
   output.textContent = value;
 };
 
+const RESULT_MESSAGES: readonly {
+  readonly min: number;
+  readonly max: number;
+  readonly options: readonly string[];
+}[] = [
+  {
+    min: 0,
+    max: 2000,
+    options: ["难道中国人不能飞？", "！？区区？！", "飞到八分钱了"],
+  },
+  { min: 2000, max: 5000, options: ["下次可以飞得更远！"] },
+  {
+    min: 5000,
+    max: Number.POSITIVE_INFINITY,
+    options: [
+      "这么强？！",
+      "击败了99.9％的中国人",
+      "击败了100％的美国人",
+      "击败了100％的日本人",
+    ],
+  },
+];
+
+const pickResultMessage = (distance: number): string => {
+  const range =
+    RESULT_MESSAGES.find(
+      (entry) => distance >= entry.min && distance < entry.max,
+    ) ?? RESULT_MESSAGES[RESULT_MESSAGES.length - 1];
+  return range.options[Math.floor(Math.random() * range.options.length)];
+};
+
 const updateHud = (): void => {
   if (!game) return;
   const snapshot = game.getSnapshot();
   const endedChanged = gameEnded !== snapshot.ended;
   if (snapshot.ended && !gameEnded) {
+    resultMessage.textContent = pickResultMessage(snapshot.distance);
+  }
+  if (snapshot.ended && !gameEnded) {
+    const previousBestDistance = progress.bestDistance;
     const nextProgress = recordCompletedDistance(progress, snapshot.distance);
     if (nextProgress !== progress) {
       progress = nextProgress;
+      if (
+        hasNewlyUnlockedLauncher(
+          previousBestDistance,
+          progress.bestDistance,
+        )
+      ) {
+        unlockNoticePending = true;
+        saveUnlockNoticePending(true);
+        setUnlockNoticeVisible(true);
+      }
       renderLauncherGrid();
     }
   }
@@ -333,14 +468,14 @@ const updateHud = (): void => {
   resultPanel.hidden = !snapshot.ended;
   if (snapshot.ended) {
     resultScore.textContent = formattedScore;
-    resultDistance.textContent = `最远距离 ${formattedDistance}`;
+    resultDistance.textContent = `你飞了${snapshot.distance}米`;
   }
   document.body.dataset.phase = snapshot.phase;
   if (endedChanged) updateAudioPause();
 };
 
 const performAction = (): void => {
-  if (hidden || portraitPaused || settingsOpen || !game) return;
+  if (hidden || portraitPaused || settingsOpen || tutorialOpen || !game) return;
   void audio.unlock();
   game.action();
   updateHud();
@@ -364,6 +499,7 @@ window.addEventListener(
     const target = event.target;
     if (
       settingsOpen ||
+      tutorialOpen ||
       (target instanceof Element && target.closest("#settings-button"))
     ) {
       return;
@@ -422,14 +558,19 @@ canvas.addEventListener("lostpointercapture", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (event.code === "Escape" && settingsOpen) {
+  if (event.code === "Escape" && (settingsOpen || tutorialOpen)) {
     event.preventDefault();
-    setSettingsOpen(false);
+    if (tutorialOpen) {
+      setTutorialOpen(false);
+    } else {
+      setSettingsOpen(false);
+    }
     return;
   }
   if (event.code !== "Space" || event.repeat) return;
   if (
     settingsOpen ||
+    tutorialOpen ||
     (event.target instanceof Element &&
       event.target.closest("button, input"))
   ) {
@@ -440,11 +581,16 @@ window.addEventListener("keydown", (event) => {
 });
 
 settingsButton.addEventListener("click", () => {
+  dismissUnlockNotice();
   setSettingsOpen(!settingsOpen);
 });
 
 settingsClose.addEventListener("click", () => {
   setSettingsOpen(false);
+});
+
+tutorialClose.addEventListener("click", () => {
+  setTutorialOpen(false);
 });
 
 musicVolumeInput.addEventListener("input", () => {
@@ -499,7 +645,7 @@ const frame = (timestamp: number): void => {
   );
   lastTimestamp = timestamp;
 
-  if (!hidden && !portraitPaused && !settingsOpen) {
+  if (!hidden && !portraitPaused && !settingsOpen && !tutorialOpen) {
     accumulator += elapsed;
     while (accumulator >= GameConfig.fixedStep) {
       game.update(GameConfig.fixedStep);
@@ -541,5 +687,12 @@ const startGame = async (): Promise<void> => {
   updateHud();
   requestAnimationFrame(frame);
 };
+
+if (!hasSeenTutorial()) {
+  setTutorialOpen(true);
+}
+
+unlockNoticePending = loadUnlockNoticePending();
+setUnlockNoticeVisible(unlockNoticePending);
 
 void startGame();

@@ -83,10 +83,17 @@ export default defineConfig({
           "dist/assets/effects",
         );
         mkdirSync(effectDirectory, { recursive: true });
-        copyFileSync(
-          resolve(import.meta.dirname, "assets/effects/impact-flash.png"),
-          resolve(effectDirectory, "impact-flash.png"),
-        );
+        for (const effectFile of [
+          "impact-flash.png",
+          "human-cannon-fuse-flame-1.png",
+          "human-cannon-fuse-flame-2.png",
+          "human-cannon-launch-smoke.png",
+        ]) {
+          copyFileSync(
+            resolve(import.meta.dirname, "assets/effects", effectFile),
+            resolve(effectDirectory, effectFile),
+          );
+        }
 
         const audioDirectory = resolve(import.meta.dirname, "dist/assets/audio");
         mkdirSync(audioDirectory, { recursive: true });

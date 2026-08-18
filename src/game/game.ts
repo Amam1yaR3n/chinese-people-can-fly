@@ -621,6 +621,7 @@ export class Game {
     return (
       Math.sin(elapsed * Math.PI * 50) *
       3 *
+      GameConfig.visualScale *
       (this.slingshot.limitPulseRemaining / duration)
     );
   }
@@ -1680,8 +1681,8 @@ export class Game {
     this.drawOriginalPlayer(
       context,
       { x: 0, y: 0 },
-      this.player.width * GameConfig.pixelsPerMeter,
-      this.player.height * GameConfig.pixelsPerMeter,
+      this.player.width * GameConfig.pixelsPerMeter * GameConfig.visualScale,
+      this.player.height * GameConfig.pixelsPerMeter * GameConfig.visualScale,
     );
     context.restore();
   }
@@ -1690,24 +1691,25 @@ export class Game {
     context: CanvasRenderingContext2D,
     ground: Vec2,
   ): void {
+    const visualScale = GameConfig.visualScale;
     context.save();
     context.translate(ground.x, ground.y);
     context.fillStyle = "#7f8b32";
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 7;
+    context.lineWidth = 7 * visualScale;
     context.lineJoin = "round";
-    context.fillRect(-48, -78, 250, 62);
-    context.strokeRect(-48, -78, 250, 62);
+    context.fillRect(-48 * visualScale, -78 * visualScale, 250 * visualScale, 62 * visualScale);
+    context.strokeRect(-48 * visualScale, -78 * visualScale, 250 * visualScale, 62 * visualScale);
     context.save();
-    context.translate(-20, -82);
+    context.translate(-20 * visualScale, -82 * visualScale);
     context.rotate(-GameConfig.missileTruck.launchAngle);
-    context.fillRect(0, -16, 180, 32);
-    context.strokeRect(0, -16, 180, 32);
+    context.fillRect(0, -16 * visualScale, 180 * visualScale, 32 * visualScale);
+    context.strokeRect(0, -16 * visualScale, 180 * visualScale, 32 * visualScale);
     context.restore();
-    for (const x of [-18, 58, 138]) {
+    for (const x of [-18 * visualScale, 58 * visualScale, 138 * visualScale]) {
       context.fillStyle = "#303744";
       context.beginPath();
-      context.arc(x, -12, 30, 0, Math.PI * 2);
+      context.arc(x, -12 * visualScale, 30 * visualScale, 0, Math.PI * 2);
       context.fill();
       context.stroke();
     }
@@ -1718,32 +1720,45 @@ export class Game {
     context: CanvasRenderingContext2D,
   ): void {
     const { launchAngle } = GameConfig.humanCannon;
+    const visualScale = GameConfig.visualScale;
     context.save();
     context.rotate(-launchAngle);
     context.fillStyle = "#555c68";
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 10;
+    context.lineWidth = 10 * visualScale;
     context.beginPath();
-    context.roundRect(-148, -70, 300, 82, 28);
+    context.roundRect(
+      -148 * visualScale,
+      -70 * visualScale,
+      300 * visualScale,
+      82 * visualScale,
+      28 * visualScale,
+    );
     context.fill();
     context.stroke();
     context.fillStyle = "#7b8490";
     context.beginPath();
-    context.roundRect(130, -82, 38, 106, 16);
+    context.roundRect(
+      130 * visualScale,
+      -82 * visualScale,
+      38 * visualScale,
+      106 * visualScale,
+      16 * visualScale,
+    );
     context.fill();
     context.stroke();
     context.restore();
 
     context.fillStyle = "#f4a63f";
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 10;
+    context.lineWidth = 10 * visualScale;
     context.beginPath();
-    context.arc(0, 0, 92, 0, Math.PI * 2);
+    context.arc(0, 0, 92 * visualScale, 0, Math.PI * 2);
     context.fill();
     context.stroke();
     context.fillStyle = "#555c68";
     context.beginPath();
-    context.arc(0, 0, 20, 0, Math.PI * 2);
+    context.arc(0, 0, 20 * visualScale, 0, Math.PI * 2);
     context.fill();
     context.stroke();
   }
@@ -1751,41 +1766,30 @@ export class Game {
   private drawHumanCannonFuse(
     context: CanvasRenderingContext2D,
   ): void {
-    const tip = this.worldToScreen(GameConfig.humanCannon.fuseWorld);
-    const pulse = (Math.sin(this.humanCannon.elapsed * 22) + 1) / 2;
-    const size = 18 + pulse * 4;
-    context.save();
-    context.translate(tip.x, tip.y);
-    context.fillStyle = "#ff5a1f";
-    context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 4;
-    context.beginPath();
-    context.moveTo(0, -size);
-    context.bezierCurveTo(size * 0.7, -size * 0.35, size * 0.55, size * 0.6, 0, size * 0.72);
-    context.bezierCurveTo(-size * 0.55, size * 0.6, -size * 0.7, -size * 0.35, 0, -size);
-    context.closePath();
-    context.fill();
-    context.stroke();
-    context.fillStyle = "#ffe04a";
-    context.beginPath();
-    context.ellipse(0, 1, size * 0.26, size * 0.48, 0, 0, Math.PI * 2);
-    context.fill();
+    const frames = this.effectSprites?.humanCannonFuseFlames;
+    if (!frames) return;
 
-    context.fillStyle = "#ffc83d";
-    for (let index = 0; index < 3; index += 1) {
-      const angle = this.humanCannon.elapsed * 6 + index * (Math.PI * 2 / 3);
-      const distance = 23 + (index % 2) * 5;
-      context.beginPath();
-      context.arc(
-        Math.cos(angle) * distance,
-        Math.sin(angle) * distance - 5,
-        3,
-        0,
-        Math.PI * 2,
-      );
-      context.fill();
-    }
-    context.restore();
+    const {
+      fuseFlameAnchor,
+      fuseFlameFrameDuration,
+      fuseFlameOffset,
+      fuseFlameSize,
+      fuseWorld,
+    } = GameConfig.humanCannon;
+    const fuseTip = this.worldToScreen(fuseWorld);
+    const frameIndex =
+      Math.floor(this.humanCannon.elapsed / fuseFlameFrameDuration) %
+      frames.length;
+    const image = frames[frameIndex];
+    const scale = fuseFlameSize / image.width;
+
+    context.drawImage(
+      image,
+      fuseTip.x + fuseFlameOffset.x - fuseFlameAnchor.x * scale,
+      fuseTip.y + fuseFlameOffset.y - fuseFlameAnchor.y * scale,
+      image.width * scale,
+      image.height * scale,
+    );
   }
 
   private drawHumanCannonPowerBar(
@@ -1796,9 +1800,15 @@ export class Game {
       powerBarWidth,
       powerBarWorld,
     } = GameConfig.humanCannon;
-    const screen = this.worldToScreen(powerBarWorld);
+    const visualScale = GameConfig.visualScale;
+    const wheel = this.worldToScreen(GameConfig.humanCannon.wheelWorld);
+    const powerBar = this.worldToScreen(powerBarWorld);
+    const screen = {
+      x: wheel.x + (powerBar.x - wheel.x) * visualScale,
+      y: wheel.y + (powerBar.y - wheel.y) * visualScale,
+    };
     const power = this.humanCannonPower();
-    const inset = 10;
+    const inset = 10 * visualScale;
     const indicatorX =
       -powerBarWidth / 2 + inset + power * (powerBarWidth - inset * 2);
 
@@ -1815,28 +1825,28 @@ export class Game {
     gradient.addColorStop(1, "#35b86b");
     context.fillStyle = gradient;
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 6;
+    context.lineWidth = 6 * visualScale;
     context.beginPath();
     context.roundRect(
       -powerBarWidth / 2,
       -powerBarHeight / 2,
       powerBarWidth,
       powerBarHeight,
-      13,
+      13 * visualScale,
     );
     context.fill();
     context.stroke();
 
     context.fillStyle = "#fffdf5";
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 5;
+    context.lineWidth = 5 * visualScale;
     context.beginPath();
     context.roundRect(
-      indicatorX - 7,
-      -powerBarHeight / 2 - 8,
-      14,
-      powerBarHeight + 16,
-      6,
+      indicatorX - 7 * visualScale,
+      -powerBarHeight / 2 - 8 * visualScale,
+      14 * visualScale,
+      powerBarHeight + 16 * visualScale,
+      6 * visualScale,
     );
     context.fill();
     context.stroke();
@@ -1847,50 +1857,71 @@ export class Game {
     context: CanvasRenderingContext2D,
     recoilOffset: Vec2,
   ): void {
-    const { launchAngle, muzzleWorld, smokeDuration } =
-      GameConfig.humanCannon;
+    const smoke = this.effectSprites?.humanCannonSmoke;
+    if (!smoke) return;
+
+    const {
+      launchAngle,
+      muzzleWorld,
+      smokeAnchor,
+      smokeDuration,
+      smokeEndWidth,
+      smokeStartWidth,
+      smokeTravelDistance,
+    } = GameConfig.humanCannon;
     if (this.humanCannon.elapsed >= smokeDuration) return;
     const progress = clamp(
       this.humanCannon.elapsed / smokeDuration,
       0,
       1,
     );
+    const easedProgress = 1 - (1 - progress) ** 3;
     const muzzle = this.worldToScreen(muzzleWorld);
     const forward = { x: Math.cos(launchAngle), y: -Math.sin(launchAngle) };
+    const travel = smokeTravelDistance * easedProgress;
+    const drawWidth =
+      smokeStartWidth + (smokeEndWidth - smokeStartWidth) * easedProgress;
+    const scale = drawWidth / smoke.width;
 
     context.save();
     context.translate(
-      muzzle.x + recoilOffset.x,
-      muzzle.y + recoilOffset.y,
+      muzzle.x + recoilOffset.x + forward.x * travel,
+      muzzle.y + recoilOffset.y + forward.y * travel,
     );
+    context.rotate(-launchAngle);
     context.globalAlpha = 1 - progress;
-    for (let index = 0; index < 5; index += 1) {
-      const travel = progress * (38 + index * 13);
-      const spread = (index - 2) * (5 + progress * 8);
-      const x = forward.x * travel - forward.y * spread;
-      const y = forward.y * travel + forward.x * spread;
-      context.fillStyle = index % 2 === 0 ? "#fffdf5" : "#dce8eb";
-      context.strokeStyle = GameConfig.palette.ink;
-      context.lineWidth = Math.max(1.5, 4 * (1 - progress));
-      context.beginPath();
-      context.arc(x, y, 10 + progress * 22 + index * 2, 0, Math.PI * 2);
-      context.fill();
-      context.stroke();
-    }
+    context.drawImage(
+      smoke,
+      -smokeAnchor.x * scale,
+      -smokeAnchor.y * scale,
+      smoke.width * scale,
+      smoke.height * scale,
+    );
     context.restore();
   }
 
   private drawSlingshotScene(context: CanvasRenderingContext2D): void {
     const pouch = this.slingshotPouchScreen();
     const seated = this.slingshotSeatedScreen(pouch);
+    const visualScale = GameConfig.visualScale;
+    const frameBase = this.worldToScreen({
+      x: GameConfig.slingshot.forkWorldX,
+      y: 0,
+    });
     const backTipBase = this.worldToScreen(
       GameConfig.slingshot.backTipWorld,
     );
     const frontTipBase = this.worldToScreen(
       GameConfig.slingshot.frontTipWorld,
     );
-    const backTip = backTipBase;
-    const frontTip = frontTipBase;
+    const backTip = {
+      x: frameBase.x + (backTipBase.x - frameBase.x) * visualScale,
+      y: frameBase.y + (backTipBase.y - frameBase.y) * visualScale,
+    };
+    const frontTip = {
+      x: frameBase.x + (frontTipBase.x - frameBase.x) * visualScale,
+      y: frameBase.y + (frontTipBase.y - frameBase.y) * visualScale,
+    };
     const tension = clamp(
       Math.hypot(this.slingshot.offset.x, this.slingshot.offset.y) /
         GameConfig.slingshot.maximumPull,
@@ -1898,8 +1929,14 @@ export class Game {
       1,
     );
     const { pouchWidth, pouchHeight } = GameConfig.slingshot;
-    const backBandStart = { x: backTip.x - 15, y: backTip.y + 3 };
-    const frontBandStart = { x: frontTip.x - 15, y: frontTip.y - 3 };
+    const backBandStart = {
+      x: backTip.x - 15 * visualScale,
+      y: backTip.y + 3 * visualScale,
+    };
+    const frontBandStart = {
+      x: frontTip.x - 15 * visualScale,
+      y: frontTip.y - 3 * visualScale,
+    };
     const pouchAttachX = pouch.x + pouchWidth * 0.38;
 
     this.drawSlingshotFrame(context);
@@ -1933,21 +1970,30 @@ export class Game {
     const size = GameConfig.slingshot.frameSize;
 
     if (!this.slingshotSprites) {
+      const visualScale = GameConfig.visualScale;
       const backTip = this.worldToScreen(GameConfig.slingshot.backTipWorld);
       const frontTip = this.worldToScreen(GameConfig.slingshot.frontTipWorld);
+      const scaledBackTip = {
+        x: base.x + (backTip.x - base.x) * visualScale,
+        y: base.y + (backTip.y - base.y) * visualScale,
+      };
+      const scaledFrontTip = {
+        x: base.x + (frontTip.x - base.x) * visualScale,
+        y: base.y + (frontTip.y - base.y) * visualScale,
+      };
       context.strokeStyle = "#142033";
-      context.lineWidth = 42;
+      context.lineWidth = 42 * visualScale;
       context.lineCap = "round";
       context.lineJoin = "round";
       context.beginPath();
       context.moveTo(base.x, base.y);
       context.lineTo(base.x, base.y - size * 0.4);
-      context.lineTo(backTip.x, backTip.y);
+      context.lineTo(scaledBackTip.x, scaledBackTip.y);
       context.moveTo(base.x, base.y - size * 0.4);
-      context.lineTo(frontTip.x, frontTip.y);
+      context.lineTo(scaledFrontTip.x, scaledFrontTip.y);
       context.stroke();
       context.strokeStyle = "#f4a63f";
-      context.lineWidth = 30;
+      context.lineWidth = 30 * visualScale;
       context.stroke();
       return;
     }
@@ -1996,16 +2042,17 @@ export class Game {
     end: Vec2,
     tension: number,
   ): void {
+    const visualScale = GameConfig.visualScale;
     const midpoint = {
       x: (start.x + end.x) / 2,
-      y: (start.y + end.y) / 2 + (1 - tension) * 18,
+      y: (start.y + end.y) / 2 + (1 - tension) * 18 * visualScale,
     };
     const red = Math.round(143 + (239 - 143) * tension);
     const green = Math.round(29 + (51 - 29) * tension);
     const blue = Math.round(44 + (64 - 44) * tension);
 
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 14 - tension * 2;
+    context.lineWidth = (14 - tension * 2) * visualScale;
     context.lineCap = "round";
     context.beginPath();
     context.moveTo(start.x, start.y);
@@ -2013,7 +2060,7 @@ export class Game {
     context.stroke();
 
     context.strokeStyle = `rgb(${red} ${green} ${blue})`;
-    context.lineWidth = 8 - tension * 1.5;
+    context.lineWidth = (8 - tension * 1.5) * visualScale;
     context.beginPath();
     context.moveTo(start.x, start.y);
     context.quadraticCurveTo(midpoint.x, midpoint.y, end.x, end.y);
@@ -2026,16 +2073,23 @@ export class Game {
     bandExit: Vec2,
     front: boolean,
   ): void {
+    const visualScale = GameConfig.visualScale;
     context.save();
     context.translate(connection.x, connection.y);
     context.rotate(front ? -0.04 : 0.04);
     context.fillStyle = "#c52f3e";
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 4;
+    context.lineWidth = 4 * visualScale;
     context.lineJoin = "round";
 
     context.beginPath();
-    context.roundRect(-13, -8, 26, 16, 7);
+    context.roundRect(
+      -13 * visualScale,
+      -8 * visualScale,
+      26 * visualScale,
+      16 * visualScale,
+      7 * visualScale,
+    );
     context.fill();
     context.stroke();
 
@@ -2044,28 +2098,35 @@ export class Game {
       y: bandExit.y - connection.y,
     };
     context.beginPath();
-    context.moveTo(-7, -6);
+    context.moveTo(-7 * visualScale, -6 * visualScale);
     context.bezierCurveTo(
-      localExit.x - 5,
-      localExit.y - 6,
-      localExit.x - 8,
-      localExit.y + 1,
-      localExit.x - 3,
-      localExit.y + 5,
+      localExit.x - 5 * visualScale,
+      localExit.y - 6 * visualScale,
+      localExit.x - 8 * visualScale,
+      localExit.y + 1 * visualScale,
+      localExit.x - 3 * visualScale,
+      localExit.y + 5 * visualScale,
     );
-    context.bezierCurveTo(-13, 10, -7, 5, -4, 2);
+    context.bezierCurveTo(
+      -13 * visualScale,
+      10 * visualScale,
+      -7 * visualScale,
+      5 * visualScale,
+      -4 * visualScale,
+      2 * visualScale,
+    );
     context.closePath();
     context.fill();
     context.stroke();
 
     context.strokeStyle = "#f35a64";
-    context.lineWidth = 2.5;
+    context.lineWidth = 2.5 * visualScale;
     context.lineCap = "round";
     context.beginPath();
-    context.moveTo(-8, -3);
-    context.lineTo(8, -3);
-    context.moveTo(-7, 3);
-    context.lineTo(7, 3);
+    context.moveTo(-8 * visualScale, -3 * visualScale);
+    context.lineTo(8 * visualScale, -3 * visualScale);
+    context.moveTo(-7 * visualScale, 3 * visualScale);
+    context.lineTo(7 * visualScale, 3 * visualScale);
     context.stroke();
     context.restore();
   }
@@ -2093,16 +2154,27 @@ export class Game {
         size,
       );
     } else {
+      const visualScale = GameConfig.visualScale;
       context.fillStyle = "#17191f";
       context.strokeStyle = GameConfig.palette.ink;
-      context.lineWidth = 5;
+      context.lineWidth = 5 * visualScale;
       context.beginPath();
-      context.arc(0, -46, 22, 0, Math.PI * 2);
+      context.arc(0, -46 * visualScale, 22 * visualScale, 0, Math.PI * 2);
       context.fill();
       context.stroke();
-      context.fillRect(-22, -24, 44, 58);
+      context.fillRect(
+        -22 * visualScale,
+        -24 * visualScale,
+        44 * visualScale,
+        58 * visualScale,
+      );
       context.fillStyle = "#fffdf5";
-      context.fillRect(-2, 24, 56, 22);
+      context.fillRect(
+        -2 * visualScale,
+        24 * visualScale,
+        56 * visualScale,
+        22 * visualScale,
+      );
     }
     context.restore();
   }
@@ -2112,6 +2184,7 @@ export class Game {
     pouch: Vec2,
   ): void {
     const { pouchWidth, pouchHeight, maximumPull } = GameConfig.slingshot;
+    const visualScale = GameConfig.visualScale;
     const rotation =
       clamp(this.slingshot.offset.y / maximumPull, -1, 1) * 0.12;
     context.save();
@@ -2119,7 +2192,7 @@ export class Game {
     context.rotate(rotation);
     context.fillStyle = "#5b321f";
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 5;
+    context.lineWidth = 5 * visualScale;
     context.beginPath();
     context.roundRect(
       -pouchWidth / 2,
@@ -2133,8 +2206,8 @@ export class Game {
     context.save();
     context.clip();
     context.strokeStyle = "#9a6440";
-    context.lineWidth = 2.5;
-    for (let x = -pouchWidth; x <= pouchWidth; x += 16) {
+    context.lineWidth = 2.5 * visualScale;
+    for (let x = -pouchWidth; x <= pouchWidth; x += 16 * visualScale) {
       context.beginPath();
       context.moveTo(x, -pouchHeight / 2);
       context.lineTo(x + pouchHeight, pouchHeight / 2);
@@ -2147,7 +2220,7 @@ export class Game {
     context.restore();
 
     context.strokeStyle = GameConfig.palette.ink;
-    context.lineWidth = 5;
+    context.lineWidth = 5 * visualScale;
     context.beginPath();
     context.roundRect(
       -pouchWidth / 2,
@@ -2159,7 +2232,15 @@ export class Game {
     context.stroke();
     context.fillStyle = "#2f1d19";
     context.beginPath();
-    context.ellipse(0, -pouchHeight * 0.3, pouchWidth * 0.34, 5, 0, 0, Math.PI * 2);
+    context.ellipse(
+      0,
+      -pouchHeight * 0.3,
+      pouchWidth * 0.34,
+      5 * visualScale,
+      0,
+      0,
+      Math.PI * 2,
+    );
     context.fill();
     context.restore();
   }
@@ -2591,8 +2672,11 @@ export class Game {
   private drawHitterAndClub(context: CanvasRenderingContext2D): void {
     const hitterAnchor = this.worldToScreen({ x: GameConfig.hitter.x, y: 0 });
     const hitterX = hitterAnchor.x;
-    const width = GameConfig.hitter.width * GameConfig.pixelsPerMeter;
-    const height = GameConfig.hitter.height * GameConfig.pixelsPerMeter;
+    const visualScale = GameConfig.visualScale;
+    const width =
+      GameConfig.hitter.width * GameConfig.pixelsPerMeter * visualScale;
+    const height =
+      GameConfig.hitter.height * GameConfig.pixelsPerMeter * visualScale;
     const hitterY = this.worldToScreenY(0) - height;
     if (hitterX > -200 && hitterX < GameConfig.logicalWidth + 200) {
       if (this.sprites) {
@@ -2607,7 +2691,12 @@ export class Game {
       }
 
       context.fillStyle = GameConfig.palette.hitterEdge;
-      context.fillRect(hitterX - width / 2 - 4, hitterY - 4, width + 8, height + 4);
+      context.fillRect(
+        hitterX - width / 2 - 4 * visualScale,
+        hitterY - 4 * visualScale,
+        width + 8 * visualScale,
+        height + 4 * visualScale,
+      );
       context.fillStyle = GameConfig.palette.hitter;
       context.fillRect(hitterX - width / 2, hitterY, width, height);
     }
@@ -2616,7 +2705,8 @@ export class Game {
     const grip = this.worldToScreen(club.start);
     const head = this.worldToScreen(club.end);
     context.strokeStyle = GameConfig.palette.club;
-    context.lineWidth = GameConfig.swing.thickness * GameConfig.pixelsPerMeter;
+    context.lineWidth =
+      GameConfig.swing.thickness * GameConfig.pixelsPerMeter * visualScale;
     context.lineCap = "round";
     context.beginPath();
     context.moveTo(grip.x, grip.y);
@@ -2626,9 +2716,19 @@ export class Game {
     context.save();
     context.translate(head.x, head.y);
     context.fillStyle = GameConfig.palette.club;
-    context.fillRect(-10, -10, 26, 20);
+    context.fillRect(
+      -10 * visualScale,
+      -10 * visualScale,
+      26 * visualScale,
+      20 * visualScale,
+    );
     context.fillStyle = GameConfig.palette.clubHead;
-    context.fillRect(-5, -5, 16, 10);
+    context.fillRect(
+      -5 * visualScale,
+      -5 * visualScale,
+      16 * visualScale,
+      10 * visualScale,
+    );
     context.restore();
   }
 
@@ -2647,14 +2747,19 @@ export class Game {
     const screen = this.worldToScreen(this.player.pos);
     const width = this.player.width * GameConfig.pixelsPerMeter;
     const height = this.player.height * GameConfig.pixelsPerMeter;
+    const visualScale = GameConfig.visualScale;
+    const visualWidth = width * visualScale;
+    const visualHeight = height * visualScale;
     const heightAboveGround = Math.max(0, -this.player.pos.y - this.player.height / 2);
     const shadowScale = clamp(1 - heightAboveGround / 100, 0.18, 1);
     const shadowWidth =
       this.powerUp.mode === "ufo"
         ? GameConfig.powerUp.ufo.displayWidth * GameConfig.pixelsPerMeter
         : this.powerUp.mode === "jet"
-        ? GameConfig.pickup.sixthGenJet.width * GameConfig.pixelsPerMeter
-        : width;
+        ? GameConfig.pickup.sixthGenJet.width *
+          GameConfig.pixelsPerMeter *
+          visualScale
+        : visualWidth;
 
     context.fillStyle = "rgb(20 32 51 / 18%)";
     context.beginPath();
@@ -2700,8 +2805,12 @@ export class Game {
         this.drawJetIcon(
           context,
           screen,
-          GameConfig.pickup.sixthGenJet.width * GameConfig.pixelsPerMeter,
-          GameConfig.pickup.sixthGenJet.height * GameConfig.pixelsPerMeter,
+          GameConfig.pickup.sixthGenJet.width *
+            GameConfig.pixelsPerMeter *
+            visualScale,
+          GameConfig.pickup.sixthGenJet.height *
+            GameConfig.pixelsPerMeter *
+            visualScale,
         );
       }
       return;
@@ -2717,10 +2826,10 @@ export class Game {
         GameConfig.pickup.skyLantern.width * GameConfig.pixelsPerMeter;
       const lanternHeight =
         GameConfig.pickup.skyLantern.height * GameConfig.pixelsPerMeter;
-      const ropeLength = 14;
+      const ropeLength = 14 * visualScale;
       const lanternScreen = {
         x: screen.x,
-        y: screen.y - height / 2 - ropeLength - lanternHeight / 2,
+        y: screen.y - visualHeight / 2 - ropeLength - lanternHeight / 2,
       };
       context.strokeStyle = GameConfig.palette.ink;
       context.lineWidth = 3;
@@ -2729,12 +2838,18 @@ export class Game {
         lanternScreen.x - lanternWidth * 0.2,
         lanternScreen.y + lanternHeight * 0.48,
       );
-      context.lineTo(screen.x - width * 0.3, screen.y - height / 2);
+      context.lineTo(
+        screen.x - visualWidth * 0.3,
+        screen.y - visualHeight / 2,
+      );
       context.moveTo(
         lanternScreen.x + lanternWidth * 0.2,
         lanternScreen.y + lanternHeight * 0.48,
       );
-      context.lineTo(screen.x + width * 0.3, screen.y - height / 2);
+      context.lineTo(
+        screen.x + visualWidth * 0.3,
+        screen.y - visualHeight / 2,
+      );
       context.stroke();
       this.drawSkyLanternIcon(
         context,
@@ -2744,7 +2859,7 @@ export class Game {
       );
     }
 
-    this.drawOriginalPlayer(context, screen, width, height);
+    this.drawOriginalPlayer(context, screen, visualWidth, visualHeight);
   }
 
   private drawJetTrails(context: CanvasRenderingContext2D): void {

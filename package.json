@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build --config vite.offline.config.ts && vite build",
     "build:offline": "tsc --noEmit && vite build --config vite.offline.config.ts",
     "preview": "vite preview",
+    "verify:cannon-fuse": "node tools/verify_cannon_fuse_effect.mjs",
     "verify:impact": "node tools/verify_impact_effect.mjs",
     "verify:ufo": "node tools/verify_ufo_gameplay.mjs"
   },

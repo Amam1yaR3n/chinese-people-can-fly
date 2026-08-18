@@ -1,3 +1,4 @@
+import { GameConfig } from "./config";
 import type { Vec2 } from "./types";
 
 export interface CharacterSprites {
@@ -21,6 +22,11 @@ export interface MissileTruckSprites {
 
 export interface EffectSprites {
   readonly impactFlash: HTMLImageElement;
+  readonly humanCannonFuseFlames: readonly [
+    HTMLImageElement,
+    HTMLImageElement,
+  ];
+  readonly humanCannonSmoke: HTMLImageElement;
 }
 
 interface AtlasFrame {
@@ -57,6 +63,12 @@ const MISSILE_TRUCK_PATH =
 const MISSILE_TRUCK_LOADED_PATH =
   "./assets/characters/launchers/missile-truck-loaded-review-v1.png";
 const IMPACT_FLASH_PATH = "./assets/effects/impact-flash.png";
+const HUMAN_CANNON_FUSE_FLAME_PATHS = [
+  "./assets/effects/human-cannon-fuse-flame-1.png",
+  "./assets/effects/human-cannon-fuse-flame-2.png",
+] as const;
+const HUMAN_CANNON_SMOKE_PATH =
+  "./assets/effects/human-cannon-launch-smoke.png";
 
 const frame = (
   x: number,
@@ -69,39 +81,39 @@ export const FlyerPoses = {
   airborne: {
     frame: frame(531, 1404, 1286, 683),
     anchor: { x: 643, y: 342 },
-    scale: 0.068,
+    scale: 0.068 * GameConfig.visualScale,
   },
   lantern: {
     frame: frame(8, 2095, 254, 812),
     // The physics center follows the person rather than the lantern envelope.
     anchor: { x: 127, y: 548 },
-    scale: 0.17,
+    scale: 0.17 * GameConfig.visualScale,
   },
   sliding: {
     frame: frame(270, 2095, 661, 251),
-    // The player center is 24 px above the ground; this keeps the belly on it.
-    anchor: { x: 331, y: 73 },
-    scale: 0.135,
+    // 放大后仍保持腹部贴地：锚点下移，使底部边缘相对锚点仍为 24px。
+    anchor: { x: 331, y: 124.016 },
+    scale: 0.135 * GameConfig.visualScale,
   },
   falling: {
     frame: frame(939, 2095, 270, 585),
     anchor: { x: 135, y: 293 },
-    scale: 0.15,
+    scale: 0.15 * GameConfig.visualScale,
   },
   jet: {
     frame: frame(8, 2915, 902, 1069),
     anchor: { x: 451, y: 534.5 },
-    scale: 0.11,
+    scale: 0.11 * GameConfig.visualScale,
   },
   ufo: {
     frame: frame(918, 2915, 600, 400),
     anchor: { x: 300, y: 200 },
-    scale: 0.25,
+    scale: 0.25 * GameConfig.visualScale,
   },
   ufoLightsOn: {
     frame: frame(8, 3992, 600, 400),
     anchor: { x: 300, y: 200 },
-    scale: 0.25,
+    scale: 0.25 * GameConfig.visualScale,
   },
 } as const satisfies Record<string, SpritePose>;
 
@@ -120,7 +132,7 @@ export const PickupPoses = {
   },
 } as const satisfies Record<string, SpritePose>;
 
-const BATTER_SCALE = 0.145;
+const BATTER_SCALE = 0.145 * GameConfig.visualScale;
 
 export const BatterFrames: readonly BatterFrame[] = [
   {
@@ -257,7 +269,18 @@ export const loadMissileTruckSprites = async (): Promise<MissileTruckSprites | n
 
 export const loadEffectSprites = async (): Promise<EffectSprites | null> => {
   try {
-    return { impactFlash: await loadImage(IMPACT_FLASH_PATH) };
+    const [impactFlash, fuseFlame1, fuseFlame2, humanCannonSmoke] =
+      await Promise.all([
+        loadImage(IMPACT_FLASH_PATH),
+        loadImage(HUMAN_CANNON_FUSE_FLAME_PATHS[0]),
+        loadImage(HUMAN_CANNON_FUSE_FLAME_PATHS[1]),
+        loadImage(HUMAN_CANNON_SMOKE_PATH),
+      ]);
+    return {
+      impactFlash,
+      humanCannonFuseFlames: [fuseFlame1, fuseFlame2],
+      humanCannonSmoke,
+    };
   } catch (error) {
     console.error(
       "Effect sprites failed to load; using geometry fallback.",
