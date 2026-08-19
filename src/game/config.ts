@@ -315,4 +315,105 @@ export const GameConfig = {
     ufoLight: "#18d8d3",
     ufoScreen: "#ffdc63",
   },
-} as const;
+};
+
+interface PortraitLayout {
+  readonly logicalWidth: number;
+  readonly worldAnchorScreenX: number;
+  readonly followScreenX: number;
+  readonly sunScreen: { readonly x: number; readonly y: number };
+  readonly cloudCycleWidth: number;
+  readonly cloudScreens: readonly { readonly x: number; readonly y: number }[];
+  readonly slingshot: {
+    readonly forkWorldX: number;
+    readonly backTipWorld: { readonly x: number; readonly y: number };
+    readonly frontTipWorld: { readonly x: number; readonly y: number };
+    readonly restPouchWorld: { readonly x: number; readonly y: number };
+  };
+  readonly missileTruck: {
+    readonly groundWorld: { readonly x: number; readonly y: number };
+    readonly loadedWorld: { readonly x: number; readonly y: number };
+    readonly launchWorld: { readonly x: number; readonly y: number };
+  };
+}
+
+// 竖屏（手机端）专用布局：9:16 画布、飞行者居中、横向视野收窄。
+// 弹弓与导弹车的世界坐标整体左移，保证装置完整落在窄视野内。
+const PORTRAIT_LAYOUT: PortraitLayout = {
+  logicalWidth: 506,
+  worldAnchorScreenX: 253,
+  followScreenX: 253,
+  sunScreen: { x: 396, y: 165 },
+  cloudCycleWidth: 540,
+  cloudScreens: [
+    { x: 55, y: 150 },
+    { x: 205, y: 305 },
+    { x: 345, y: 430 },
+    { x: 470, y: 345 },
+  ],
+  slingshot: {
+    forkWorldX: 5.8333,
+    backTipWorld: { x: 10.2, y: -28.35 },
+    frontTipWorld: { x: 1.58, y: -28.35 },
+    restPouchWorld: { x: -13.9, y: -25.4 },
+  },
+  missileTruck: {
+    groundWorld: { x: -21.1, y: 0 },
+    loadedWorld: { x: -12.28, y: -34.272 },
+    launchWorld: { x: -12.28, y: -34.272 },
+  },
+};
+
+const LANDSCAPE_LAYOUT: PortraitLayout = {
+  logicalWidth: 1600,
+  worldAnchorScreenX: 300,
+  followScreenX: 540,
+  sunScreen: { x: 1410, y: 190 },
+  cloudCycleWidth: 2300,
+  cloudScreens: [
+    { x: 180, y: 155 },
+    { x: 680, y: 300 },
+    { x: 1120, y: 420 },
+    { x: 1540, y: 350 },
+  ],
+  slingshot: {
+    forkWorldX: 23.333,
+    backTipWorld: { x: 27.7, y: -28.35 },
+    frontTipWorld: { x: 19.08, y: -28.35 },
+    restPouchWorld: { x: 3.6, y: -25.4 },
+  },
+  missileTruck: {
+    groundWorld: { x: 0, y: 0 },
+    loadedWorld: { x: 8.82, y: -34.272 },
+    launchWorld: { x: 8.82, y: -34.272 },
+  },
+};
+
+let currentViewport: "landscape" | "portrait" = "landscape";
+
+export const isPortraitViewport = (): boolean => currentViewport === "portrait";
+
+// 在竖屏与横屏之间切换游戏视野布局。横屏保持原有 16:9 数值，竖屏使用
+// 9:16 的窄画布并把世界锚点与镜头跟随点都放到画面正中。
+export const applyViewport = (portrait: boolean): boolean => {
+  if ((currentViewport === "portrait") === portrait) return false;
+  currentViewport = portrait ? "portrait" : "landscape";
+
+  const layout = portrait ? PORTRAIT_LAYOUT : LANDSCAPE_LAYOUT;
+  GameConfig.logicalWidth = layout.logicalWidth;
+  GameConfig.worldAnchorScreenX = layout.worldAnchorScreenX;
+  GameConfig.followScreenX = layout.followScreenX;
+  GameConfig.background.sunScreen = { ...layout.sunScreen };
+  GameConfig.background.cloudCycleWidth = layout.cloudCycleWidth;
+  GameConfig.background.cloudScreens = layout.cloudScreens.map((point) => ({
+    ...point,
+  }));
+  GameConfig.slingshot.forkWorldX = layout.slingshot.forkWorldX;
+  GameConfig.slingshot.backTipWorld = { ...layout.slingshot.backTipWorld };
+  GameConfig.slingshot.frontTipWorld = { ...layout.slingshot.frontTipWorld };
+  GameConfig.slingshot.restPouchWorld = { ...layout.slingshot.restPouchWorld };
+  GameConfig.missileTruck.groundWorld = { ...layout.missileTruck.groundWorld };
+  GameConfig.missileTruck.loadedWorld = { ...layout.missileTruck.loadedWorld };
+  GameConfig.missileTruck.launchWorld = { ...layout.missileTruck.launchWorld };
+  return true;
+};

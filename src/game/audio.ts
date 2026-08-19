@@ -72,7 +72,14 @@ export class AudioController {
 
   async unlock(): Promise<void> {
     if (!this.context) {
-      const AudioContextClass = window.AudioContext;
+      const AudioContextClass =
+        window.AudioContext ??
+        (
+          window as unknown as {
+            webkitAudioContext?: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      if (!AudioContextClass) return;
       this.context = new AudioContextClass();
       this.effectsGain = this.context.createGain();
       this.effectsGain.gain.value = this.effectsVolume;

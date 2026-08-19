@@ -1,4 +1,4 @@
-import { GameConfig } from "./config";
+import { GameConfig, isPortraitViewport } from "./config";
 import type { LauncherId } from "./launchers";
 import {
   BackgroundPoses,
@@ -209,6 +209,17 @@ export class Game {
     if (launcherId === this.launcherId) return;
     this.launcherId = launcherId;
     this.resetRound(false);
+  }
+
+  // 屏幕方向切换后，弹弓待发状态需要按新布局重新对齐角色与皮兜。
+  onViewportChanged(): void {
+    if (
+      this.launcherId === "slingshot" &&
+      this.phase === "ready" &&
+      this.slingshot.state === "idle"
+    ) {
+      this.syncPlayerToSlingshot();
+    }
   }
 
   pointerDown(position: Vec2): boolean {
@@ -1444,21 +1455,29 @@ export class Game {
   }
 
   private drawSkyFallback(context: CanvasRenderingContext2D): void {
+    const { logicalWidth } = GameConfig;
+    const portrait = isPortraitViewport();
     context.fillStyle = GameConfig.palette.sun;
     context.beginPath();
-    context.arc(GameConfig.logicalWidth - 180, 155, 58, 0, Math.PI * 2);
+    context.arc(
+      portrait ? 396 : logicalWidth - 180,
+      155,
+      portrait ? 46 : 58,
+      0,
+      Math.PI * 2,
+    );
     context.fill();
 
     context.fillStyle = `${GameConfig.palette.cloud}cc`;
     this.drawCloudFallback(
       context,
-      GameConfig.logicalWidth - 410 - this.camera.x * 0.32,
+      (portrait ? 210 : logicalWidth - 410) - this.camera.x * 0.32,
       170,
       1,
     );
     this.drawCloudFallback(
       context,
-      GameConfig.logicalWidth - 1090 - this.camera.x * 0.2,
+      (portrait ? 60 : logicalWidth - 1090) - this.camera.x * 0.2,
       290,
       0.72,
     );

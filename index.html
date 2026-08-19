@@ -381,10 +381,78 @@
         </div>
       </section>
 
-      <section id="portrait-overlay" class="portrait-overlay" hidden>
-        <div class="rotate-icon" aria-hidden="true"></div>
-        <strong>请旋转为横屏</strong>
+      <section
+        id="landscape-tip"
+        class="landscape-tip"
+        role="dialog"
+        aria-modal="true"
+        aria-label="横屏游玩提示"
+        hidden
+      >
+        <div id="landscape-tip-panel" class="landscape-tip-panel" tabindex="-1">
+          <p class="landscape-tip-line">建议横屏游玩，体验更佳</p>
+          <svg
+            class="landscape-tip-arrow"
+            viewBox="0 0 120 120"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <defs>
+              <marker
+                id="landscape-tip-arrow-head"
+                viewBox="0 0 10 10"
+                refX="6.5"
+                refY="5"
+                markerWidth="12"
+                markerHeight="12"
+                markerUnits="userSpaceOnUse"
+                orient="auto"
+              >
+                <path d="M 0 1 L 9 5 L 0 9 Z" fill="#142033" />
+              </marker>
+            </defs>
+            <g class="landscape-tip-arrow-ring">
+              <path
+                d="M 31.7 31.7 A 40 40 0 1 1 85.7 90.6"
+                fill="none"
+                stroke="#142033"
+                stroke-width="7"
+                stroke-linecap="round"
+                marker-end="url(#landscape-tip-arrow-head)"
+              />
+            </g>
+            <rect
+              x="45"
+              y="26"
+              width="30"
+              height="68"
+              rx="8"
+              fill="#fffdf5"
+              stroke="#142033"
+              stroke-width="4"
+            />
+            <rect
+              x="51"
+              y="32"
+              width="18"
+              height="2.6"
+              rx="1.3"
+              fill="#142033"
+              opacity="0.55"
+            />
+            <rect
+              x="54"
+              y="84.5"
+              width="12"
+              height="2.6"
+              rx="1.3"
+              fill="#142033"
+              opacity="0.45"
+            />
+          </svg>
+        </div>
       </section>
+
     </main>
     <script vite-ignore src="./offline/game.js"></script>
   </body>

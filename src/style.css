@@ -1203,6 +1203,72 @@ canvas {
   outline-offset: max(3px, 0.2vw);
 }
 
+.landscape-tip {
+  position: absolute;
+  inset: 0;
+  z-index: 31;
+  place-items: center;
+  padding: clamp(18px, 3vw, 48px);
+  background: rgb(20 32 51 / 58%);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.landscape-tip:not([hidden]) {
+  display: grid;
+}
+
+.landscape-tip-panel {
+  display: grid;
+  justify-items: center;
+  gap: clamp(14px, 2vw, 22px);
+  width: min(360px, 100%);
+  padding: clamp(24px, 4vw, 40px) clamp(22px, 4vw, 36px);
+  border: max(3px, 0.3vw) solid #142033;
+  border-radius: clamp(18px, 2.4vw, 30px);
+  background: #fffdf5;
+  box-shadow: 0 clamp(7px, 0.8vw, 13px) 0 #142033;
+  color: #142033;
+  text-align: center;
+}
+
+.landscape-tip-panel:focus-visible {
+  outline: max(3px, 0.22vw) solid #fffdf5;
+  outline-offset: max(3px, 0.2vw);
+}
+
+.landscape-tip-line {
+  margin: 0;
+  font-size: clamp(16px, 2.2vw, 24px);
+  font-weight: 900;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+.landscape-tip-arrow {
+  display: block;
+  width: clamp(112px, 30vw, 170px);
+  aspect-ratio: 1;
+}
+
+.landscape-tip-arrow-ring {
+  transform-box: view-box;
+  transform-origin: 60px 60px;
+  animation: landscape-tip-rotate 2.8s linear infinite;
+}
+
+@keyframes landscape-tip-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landscape-tip-arrow-ring {
+    animation: none;
+  }
+}
+
 .result {
   position: absolute;
   left: 50%;
@@ -1242,28 +1308,427 @@ canvas {
   overflow-wrap: break-word;
 }
 
-.portrait-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  place-items: center;
-  align-content: center;
-  gap: 24px;
-  background: #142033;
-  color: #fffdf5;
-  font-size: clamp(22px, 7vw, 42px);
-  letter-spacing: 0.08em;
-  text-align: center;
+/* Portrait phones use a 9:16 playfield that fills the full screen height and
+   is centered horizontally; tall phone screens crop both sides evenly so the
+   flyer stays centered while the horizontal view is compressed. */
+@media (orientation: portrait) {
+  html,
+  body {
+    min-height: 100dvh;
+  }
+
+  #game-shell {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    box-shadow: none;
+  }
+
+  #game {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: auto;
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    aspect-ratio: 9 / 16;
+    translate: -50% 0;
+  }
+
+  .hud {
+    z-index: 10;
+    grid-template-areas:
+      "logo distance"
+      "actions actions";
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: clamp(9px, 2.8vw, 13px);
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 10px)
+      calc(env(safe-area-inset-right, 0px) + 12px)
+      0
+      calc(env(safe-area-inset-left, 0px) + 12px);
+  }
+
+  .hud h1 {
+    grid-area: logo;
+    width: clamp(96px, 31vw, 132px);
+  }
+
+  .hud output {
+    grid-area: distance;
+    align-self: center;
+    justify-self: end;
+    padding: 0.3em 0.72em 0.36em;
+    border-width: 2px;
+    font-size: clamp(16px, 5vw, 22px);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .hud-actions {
+    grid-area: actions;
+    justify-self: center;
+    gap: clamp(11px, 3.5vw, 17px);
+  }
+
+  .hud-icon-button {
+    width: clamp(44px, 12.5vw, 50px);
+    padding: clamp(6px, 1.8vw, 8px);
+    border-width: 2px;
+  }
+
+  .unlock-notice {
+    top: calc(100% + 12px);
+    right: -4px;
+    font-size: 11px;
+  }
+
+  .settings-overlay,
+  .leaderboard-overlay,
+  .audio-overlay,
+  .tutorial-overlay,
+  .landscape-tip {
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 10px)
+      calc(env(safe-area-inset-right, 0px) + 10px)
+      calc(env(safe-area-inset-bottom, 0px) + 10px)
+      calc(env(safe-area-inset-left, 0px) + 10px);
+  }
+
+  .leaderboard-panel {
+    width: 100%;
+    height: min(560px, 78dvh);
+    gap: 8px;
+    padding: 14px 12px 12px;
+    border-width: 3px;
+    border-radius: 18px;
+  }
+
+  .leaderboard-close,
+  .settings-close,
+  .audio-close {
+    width: 44px;
+    border-width: 2px;
+    font-size: 30px;
+  }
+
+  .leaderboard-close {
+    top: 7px;
+    right: 7px;
+  }
+
+  .leaderboard-heading h2 {
+    font-size: clamp(24px, 7vw, 30px);
+  }
+
+  .leaderboard-status {
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .leaderboard-status strong {
+    font-size: 18px;
+  }
+
+  .leaderboard-status span {
+    font-size: 12px;
+  }
+
+  .leaderboard-columns,
+  .rank-row {
+    grid-template-columns: 40px minmax(0, 1fr) clamp(76px, 24vw, 96px);
+  }
+
+  .leaderboard-columns {
+    padding: 7px 8px;
+    font-size: 11px;
+  }
+
+  .rank-row {
+    min-height: 44px;
+    padding: 5px 8px;
+    font-size: clamp(12px, 3.7vw, 15px);
+  }
+
+  .rank-position {
+    width: 28px;
+  }
+
+  .rank-player {
+    gap: 7px;
+  }
+
+  .rank-avatar {
+    width: 30px;
+    font-size: 11px;
+  }
+
+  .my-rank {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 7px;
+    min-height: 46px;
+    padding: 6px 9px;
+    border-width: 2px;
+    font-size: clamp(12px, 3.7vw, 15px);
+  }
+
+  .my-rank-label {
+    width: 30px;
+  }
+
+  #my-rank-position {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .audio-panel {
+    width: min(420px, 100%);
+    max-height: 100%;
+    padding: 28px 20px 24px;
+    border-width: 3px;
+    border-radius: 18px;
+  }
+
+  .audio-close {
+    top: 7px;
+    right: 7px;
+  }
+
+  .audio-controls h2 {
+    font-size: clamp(24px, 7vw, 30px);
+  }
+
+  .volume-control {
+    gap: 6px 12px;
+    margin-top: 18px;
+  }
+
+  .volume-control span,
+  .volume-control output {
+    font-size: 15px;
+  }
+
+  .volume-control input {
+    height: 40px;
+  }
+
+  .settings-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content max-content max-content;
+    align-content: start;
+    gap: 12px;
+    width: 100%;
+    height: min(540px, 76dvh);
+    max-height: 100%;
+    padding: 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-width: 3px;
+    border-radius: 18px;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .settings-close {
+    position: sticky;
+    top: 0;
+    right: auto;
+    z-index: 3;
+    justify-self: end;
+    margin: 0 0 -44px;
+  }
+
+  .creator-promo {
+    align-content: start;
+    gap: 5px;
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 2px solid #dce8eb;
+  }
+
+  .promo-section-label {
+    padding-right: 50px;
+    font-size: 11px;
+  }
+
+  .account-card,
+  .video-card {
+    padding: 7px;
+    border-radius: 12px;
+  }
+
+  .account-avatar {
+    width: 40px;
+  }
+
+  .account-name {
+    font-size: 14px;
+  }
+
+  .promo-action {
+    font-size: 11px;
+  }
+
+  .video-card {
+    grid-template-columns: minmax(0, 1fr) minmax(116px, 42%);
+    grid-template-rows: auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .video-card h2 {
+    font-size: 12px;
+    -webkit-line-clamp: 3;
+  }
+
+  .featured-video-cover {
+    grid-column: 2;
+    grid-row: 1;
+    border-radius: 9px;
+  }
+
+  .video-play-icon {
+    width: 34px;
+  }
+
+  .promotion-status {
+    font-size: 10px;
+  }
+
+  .launcher-picker {
+    grid-template-rows: auto auto auto;
+    gap: 8px;
+  }
+
+  .launcher-grid {
+    grid-template-rows: repeat(2, auto);
+    gap: 8px;
+  }
+
+  .launcher-card {
+    grid-template-rows: auto auto auto;
+    gap: 3px;
+    padding: 6px;
+    border-width: 2px;
+    border-radius: 12px;
+  }
+
+  .launcher-card-icon img {
+    height: clamp(46px, 14vw, 58px);
+  }
+
+  .launcher-card-name {
+    font-size: 13px;
+  }
+
+  .launcher-card-detail {
+    font-size: 10px;
+  }
+
+  .launcher-access-status {
+    min-height: 1.4em;
+    font-size: 10px;
+  }
+
+  .best-distance {
+    font-size: 13px;
+  }
+
+  .tutorial-panel {
+    width: 100%;
+    padding: 26px 18px;
+    border-width: 3px;
+    border-radius: 18px;
+  }
+
+  .tutorial-line {
+    font-size: clamp(14px, 4vw, 18px);
+    white-space: normal;
+  }
+
+  .tutorial-close {
+    font-size: 18px;
+  }
+
+  .landscape-tip-panel {
+    width: 100%;
+    padding: 24px 18px;
+    border-width: 3px;
+    border-radius: 18px;
+  }
+
+  .landscape-tip-line {
+    font-size: clamp(15px, 4.4vw, 18px);
+  }
+
+  .landscape-tip-arrow {
+    width: clamp(96px, 30vw, 140px);
+  }
+
+  .result {
+    top: 42%;
+    width: calc(100% - 28px);
+    min-width: 0;
+    padding: 18px 14px;
+  }
+
+  .result strong {
+    font-size: clamp(36px, 13vw, 58px);
+  }
+
+  .result-message {
+    font-size: 14px;
+  }
 }
 
-.portrait-overlay:not([hidden]) {
-  display: grid;
-}
+@media (orientation: portrait) and (max-width: 340px) {
+  .hud {
+    row-gap: 8px;
+    padding-inline:
+      calc(env(safe-area-inset-left, 0px) + 9px)
+      calc(env(safe-area-inset-right, 0px) + 9px);
+  }
 
-.rotate-icon {
-  width: 82px;
-  height: 132px;
-  border: 7px solid #fffdf5;
-  border-radius: 12px;
-  transform: rotate(90deg);
+  .hud h1 {
+    width: 92px;
+  }
+
+  .hud output {
+    font-size: 15px;
+  }
+
+  .hud-actions {
+    gap: 10px;
+  }
+
+  .hud-icon-button {
+    width: 42px;
+  }
+
+  .leaderboard-columns,
+  .rank-row {
+    grid-template-columns: 36px minmax(0, 1fr) 74px;
+  }
+
+  .rank-avatar {
+    width: 27px;
+  }
+
+  .rank-row,
+  .my-rank {
+    font-size: 12px;
+  }
+
+  .settings-panel {
+    padding: 9px;
+  }
+
+  .video-card {
+    grid-template-columns: minmax(0, 1fr) 112px;
+  }
 }

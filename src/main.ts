@@ -4,7 +4,7 @@ import {
   mergeProgress,
   queueCloudProgressSave,
 } from "./game/cloud-progress";
-import { GameConfig } from "./game/config";
+import { applyViewport, GameConfig } from "./game/config";
 import { Game } from "./game/game";
 import {
   DEFAULT_LAUNCHER_ID,
@@ -60,6 +60,7 @@ type LauncherAccessFailureReason =
 
 const VOLUME_STORAGE_KEY = "chinese-people-can-fly:volume-settings";
 const TUTORIAL_STORAGE_KEY = "chinese-people-can-fly:tutorial-shown";
+const LANDSCAPE_TIP_STORAGE_KEY = "chinese-people-can-fly:landscape-tip-shown";
 const UNLOCK_NOTICE_STORAGE_KEY =
   "chinese-people-can-fly:interaction-unlock-notice-v1";
 const AUTHOR_ID = "137429365";
@@ -118,6 +119,30 @@ const markTutorialSeen = (): void => {
     window.localStorage.setItem(TUTORIAL_STORAGE_KEY, "1");
   } catch {
     // The current session keeps the tutorial dismissed once closed.
+  }
+};
+
+const hasSeenLandscapeTip = (): boolean => {
+  try {
+    return window.localStorage.getItem(LANDSCAPE_TIP_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const markLandscapeTipSeen = (): void => {
+  try {
+    window.localStorage.setItem(LANDSCAPE_TIP_STORAGE_KEY, "1");
+  } catch {
+    // The current session keeps the tip dismissed once closed.
+  }
+};
+
+const isPortrait = (): boolean => {
+  try {
+    return window.matchMedia("(orientation: portrait)").matches;
+  } catch {
+    return window.innerHeight > window.innerWidth;
   }
 };
 
@@ -185,10 +210,13 @@ const myRankDistance = document.querySelector<HTMLOutputElement>(
 const resultPanel = document.querySelector<HTMLElement>("#result");
 const resultDistance = document.querySelector<HTMLElement>("#result-distance");
 const resultMessage = document.querySelector<HTMLElement>("#result-message");
-const portraitOverlay = document.querySelector<HTMLElement>("#portrait-overlay");
 const tutorialDialog = document.querySelector<HTMLElement>("#tutorial-dialog");
 const tutorialClose = document.querySelector<HTMLButtonElement>(
   "#tutorial-close",
+);
+const landscapeTip = document.querySelector<HTMLElement>("#landscape-tip");
+const landscapeTipPanel = document.querySelector<HTMLElement>(
+  "#landscape-tip-panel",
 );
 const unlockNotice = document.querySelector<HTMLElement>("#unlock-notice");
 const settingsButton = document.querySelector<HTMLButtonElement>(
@@ -260,9 +288,10 @@ if (
   !resultPanel ||
   !resultDistance ||
   !resultMessage ||
-  !portraitOverlay ||
   !tutorialDialog ||
   !tutorialClose ||
+  !landscapeTip ||
+  !landscapeTipPanel ||
   !unlockNotice ||
   !settingsButton ||
   !settingsDialog ||
@@ -302,15 +331,21 @@ let game: Game | null = null;
 let accumulator = 0;
 let lastTimestamp = performance.now();
 let hidden = document.hidden;
-let portraitPaused = false;
 let settingsOpen = false;
 let leaderboardOpen = false;
 let audioOpen = false;
 let tutorialOpen = false;
+let landscapeTipOpen = false;
 let unlockNoticePending = false;
 let gameEnded = false;
 let musicPreviewTimer: number | null = null;
-let activeLauncherPointerId: number | null = null;
+
+type ActiveLauncherInput =
+  | { readonly kind: "pointer"; readonly pointerId: number }
+  | { readonly kind: "touch"; readonly touchId: number }
+  | { readonly kind: "mouse" }
+  | null;
+let activeLauncherInput: ActiveLauncherInput = null;
 let pendingGameLauncher: LauncherId | null = null;
 let roundHasInteraction = false;
 let leaderboardRequestId = 0;
@@ -325,11 +360,11 @@ let launcherAccessFailureReason: LauncherAccessFailureReason | null = null;
 const updateAudioPause = (): void => {
   audio.setPaused(
     hidden ||
-      portraitPaused ||
       settingsOpen ||
       leaderboardOpen ||
       audioOpen ||
       tutorialOpen ||
+      landscapeTipOpen ||
       gameEnded,
   );
 };
@@ -358,10 +393,11 @@ const releaseLauncherPointerCapture = (pointerId: number): void => {
 
 const cancelActiveLauncherGesture = (): void => {
   game?.cancelLauncherGesture();
-  if (activeLauncherPointerId !== null) {
-    releaseLauncherPointerCapture(activeLauncherPointerId);
-    activeLauncherPointerId = null;
+  if (!activeLauncherInput) return;
+  if (activeLauncherInput.kind === "pointer") {
+    releaseLauncherPointerCapture(activeLauncherInput.pointerId);
   }
+  activeLauncherInput = null;
 };
 
 const applyPendingGameLauncher = (): void => {
@@ -532,7 +568,7 @@ const stopMusicPreview = (): void => {
 
 const previewMusic = async (): Promise<void> => {
   await audio.unlock();
-  if (!audioOpen || hidden || portraitPaused) return;
+  if (!audioOpen || hidden) return;
   if (musicPreviewTimer !== null) window.clearTimeout(musicPreviewTimer);
   audio.setPaused(false);
   musicPreviewTimer = window.setTimeout(() => {
@@ -959,7 +995,30 @@ const setTutorialOpen = (open: boolean): void => {
   }
 
   markTutorialSeen();
+  maybeShowLandscapeTip();
+  if (!landscapeTipOpen) {
+    settingsButton.focus({ preventScroll: true });
+  }
+};
+
+const setLandscapeTipOpen = (open: boolean): void => {
+  if (landscapeTipOpen === open) return;
+  landscapeTipOpen = open;
+  landscapeTip.hidden = !open;
+  accumulator = 0;
+
+  if (open) {
+    landscapeTipPanel.focus({ preventScroll: true });
+    return;
+  }
+
+  markLandscapeTipSeen();
   settingsButton.focus({ preventScroll: true });
+};
+
+const maybeShowLandscapeTip = (): void => {
+  if (hasSeenLandscapeTip() || !isPortrait()) return;
+  setLandscapeTipOpen(true);
 };
 
 const progressMatches = (
@@ -1023,6 +1082,10 @@ renderVolumeControl(
 renderLauncherGrid();
 
 const resizeCanvas = (): void => {
+  const viewportChanged = applyViewport(
+    window.matchMedia("(orientation: portrait)").matches,
+  );
+  if (viewportChanged) game?.onViewportChanged();
   const pixelRatio = clampPixelRatio(window.devicePixelRatio || 1);
   const width = Math.round(GameConfig.logicalWidth * pixelRatio);
   const height = Math.round(GameConfig.logicalHeight * pixelRatio);
@@ -1032,21 +1095,9 @@ const resizeCanvas = (): void => {
   }
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   context.imageSmoothingEnabled = true;
-  updateOrientationPause();
 };
 
 const clampPixelRatio = (ratio: number): number => Math.min(2, Math.max(1, ratio));
-
-const updateOrientationPause = (): void => {
-  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
-  portraitPaused = coarsePointer && window.innerHeight > window.innerWidth;
-  portraitOverlay.hidden = !portraitPaused;
-  if (portraitPaused) {
-    accumulator = 0;
-    cancelActiveLauncherGesture();
-  }
-  updateAudioPause();
-};
 
 const updateOutput = (
   output: HTMLOutputElement,
@@ -1087,11 +1138,11 @@ const updateHud = (): void => {
 const performAction = (): void => {
   if (
     hidden ||
-    portraitPaused ||
     settingsOpen ||
     leaderboardOpen ||
     audioOpen ||
     tutorialOpen ||
+    landscapeTipOpen ||
     !game
   ) {
     return;
@@ -1104,43 +1155,56 @@ const performAction = (): void => {
   updateHud();
 };
 
-const pointerToLogicalPosition = (event: PointerEvent): Vec2 => {
+const toLogicalPosition = (clientX: number, clientY: number): Vec2 => {
   const bounds = canvas.getBoundingClientRect();
   return {
     x:
-      ((event.clientX - bounds.left) / Math.max(1, bounds.width)) *
+      ((clientX - bounds.left) / Math.max(1, bounds.width)) *
       GameConfig.logicalWidth,
     y:
-      ((event.clientY - bounds.top) / Math.max(1, bounds.height)) *
+      ((clientY - bounds.top) / Math.max(1, bounds.height)) *
       GameConfig.logicalHeight,
   };
 };
 
+const pointerEventSupported = typeof window.PointerEvent !== "undefined";
+const touchEventSupported = "ontouchstart" in window;
+
+const isGameplayInputBlocked = (target: EventTarget | null): boolean =>
+  settingsOpen ||
+  leaderboardOpen ||
+  audioOpen ||
+  tutorialOpen ||
+  landscapeTipOpen ||
+  (target instanceof Element &&
+    target.closest("#settings-button, #leaderboard-button, #audio-button") !==
+      null) ||
+  hidden ||
+  !game;
+
 window.addEventListener(
   "pointerdown",
   (event) => {
-    const target = event.target;
-    if (
-      settingsOpen ||
-      leaderboardOpen ||
-      audioOpen ||
-      tutorialOpen ||
-      (target instanceof Element &&
-        target.closest("#settings-button, #leaderboard-button, #audio-button"))
-    ) {
-      return;
-    }
-    if (hidden || portraitPaused || !game) return;
+    // Touch input is handled by the touch event listeners below, which older
+    // iOS WebViews deliver reliably; skip touch-synthesized pointer events so
+    // a single tap is not processed twice.
+    if (touchEventSupported && event.pointerType === "touch") return;
+    if (isGameplayInputBlocked(event.target)) return;
+    const currentGame = game;
+    if (!currentGame) return;
     event.preventDefault();
     void audio.unlock();
     applyPendingGameLauncher();
-    const phaseBeforeInput = game.getSnapshot().phase;
-    const beganLauncherDrag = game.pointerDown(
-      pointerToLogicalPosition(event),
+    const phaseBeforeInput = currentGame.getSnapshot().phase;
+    const beganLauncherDrag = currentGame.pointerDown(
+      toLogicalPosition(event.clientX, event.clientY),
     );
     finishGameInput(phaseBeforeInput);
     if (beganLauncherDrag) {
-      activeLauncherPointerId = event.pointerId;
+      activeLauncherInput = {
+        kind: "pointer",
+        pointerId: event.pointerId,
+      };
       try {
         canvas.setPointerCapture(event.pointerId);
       } catch {
@@ -1155,9 +1219,17 @@ window.addEventListener(
 window.addEventListener(
   "pointermove",
   (event) => {
-    if (event.pointerId !== activeLauncherPointerId || !game) return;
+    const input = activeLauncherInput;
+    if (
+      !input ||
+      input.kind !== "pointer" ||
+      input.pointerId !== event.pointerId ||
+      !game
+    ) {
+      return;
+    }
     event.preventDefault();
-    game.pointerMove(pointerToLogicalPosition(event));
+    game.pointerMove(toLogicalPosition(event.clientX, event.clientY));
   },
   { passive: false },
 );
@@ -1165,35 +1237,164 @@ window.addEventListener(
 window.addEventListener(
   "pointerup",
   (event) => {
-    if (event.pointerId !== activeLauncherPointerId || !game) return;
+    const input = activeLauncherInput;
+    if (
+      !input ||
+      input.kind !== "pointer" ||
+      input.pointerId !== event.pointerId ||
+      !game
+    ) {
+      return;
+    }
     event.preventDefault();
-    game.pointerUp(pointerToLogicalPosition(event));
+    game.pointerUp(toLogicalPosition(event.clientX, event.clientY));
     releaseLauncherPointerCapture(event.pointerId);
-    activeLauncherPointerId = null;
+    activeLauncherInput = null;
     updateHud();
   },
   { passive: false },
 );
 
 window.addEventListener("pointercancel", (event) => {
-  if (event.pointerId !== activeLauncherPointerId) return;
+  const input = activeLauncherInput;
+  if (
+    !input ||
+    input.kind !== "pointer" ||
+    input.pointerId !== event.pointerId
+  ) {
+    return;
+  }
   cancelActiveLauncherGesture();
 });
 
 canvas.addEventListener("lostpointercapture", (event) => {
-  if (event.pointerId !== activeLauncherPointerId) return;
-  activeLauncherPointerId = null;
+  const input = activeLauncherInput;
+  if (
+    !input ||
+    input.kind !== "pointer" ||
+    input.pointerId !== event.pointerId
+  ) {
+    return;
+  }
+  activeLauncherInput = null;
   game?.cancelLauncherGesture();
 });
+
+window.addEventListener(
+  "touchstart",
+  (event) => {
+    if (isGameplayInputBlocked(event.target)) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const currentGame = game;
+    if (!currentGame) return;
+    event.preventDefault();
+    void audio.unlock();
+    applyPendingGameLauncher();
+    const phaseBeforeInput = currentGame.getSnapshot().phase;
+    const beganLauncherDrag = currentGame.pointerDown(
+      toLogicalPosition(touch.clientX, touch.clientY),
+    );
+    finishGameInput(phaseBeforeInput);
+    if (beganLauncherDrag) {
+      activeLauncherInput = { kind: "touch", touchId: touch.identifier };
+    }
+    updateHud();
+  },
+  { passive: false },
+);
+
+window.addEventListener(
+  "touchmove",
+  (event) => {
+    const input = activeLauncherInput;
+    if (!input || input.kind !== "touch" || !game) return;
+    const touch = Array.from(event.changedTouches).find(
+      ({ identifier }) => identifier === input.touchId,
+    );
+    if (!touch) return;
+    event.preventDefault();
+    game.pointerMove(toLogicalPosition(touch.clientX, touch.clientY));
+  },
+  { passive: false },
+);
+
+window.addEventListener(
+  "touchend",
+  (event) => {
+    const input = activeLauncherInput;
+    if (!input || input.kind !== "touch" || !game) return;
+    const touch = Array.from(event.changedTouches).find(
+      ({ identifier }) => identifier === input.touchId,
+    );
+    if (!touch) return;
+    event.preventDefault();
+    game.pointerUp(toLogicalPosition(touch.clientX, touch.clientY));
+    activeLauncherInput = null;
+    updateHud();
+  },
+  { passive: false },
+);
+
+window.addEventListener("touchcancel", (event) => {
+  const input = activeLauncherInput;
+  if (!input || input.kind !== "touch") return;
+  const canceled = Array.from(event.changedTouches).some(
+    ({ identifier }) => identifier === input.touchId,
+  );
+  if (canceled) cancelActiveLauncherGesture();
+});
+
+if (!pointerEventSupported && !touchEventSupported) {
+  window.addEventListener("mousedown", (event) => {
+    if (isGameplayInputBlocked(event.target)) return;
+    const currentGame = game;
+    if (!currentGame) return;
+    event.preventDefault();
+    void audio.unlock();
+    applyPendingGameLauncher();
+    const phaseBeforeInput = currentGame.getSnapshot().phase;
+    const beganLauncherDrag = currentGame.pointerDown(
+      toLogicalPosition(event.clientX, event.clientY),
+    );
+    finishGameInput(phaseBeforeInput);
+    if (beganLauncherDrag) {
+      activeLauncherInput = { kind: "mouse" };
+    }
+    updateHud();
+  });
+
+  window.addEventListener("mousemove", (event) => {
+    const input = activeLauncherInput;
+    if (!input || input.kind !== "mouse" || !game) return;
+    event.preventDefault();
+    game.pointerMove(toLogicalPosition(event.clientX, event.clientY));
+  });
+
+  window.addEventListener("mouseup", (event) => {
+    const input = activeLauncherInput;
+    if (!input || input.kind !== "mouse" || !game) return;
+    event.preventDefault();
+    game.pointerUp(toLogicalPosition(event.clientX, event.clientY));
+    activeLauncherInput = null;
+    updateHud();
+  });
+}
 
 window.addEventListener("keydown", (event) => {
   if (
     event.code === "Escape" &&
-    (settingsOpen || leaderboardOpen || audioOpen || tutorialOpen)
+    (settingsOpen ||
+      leaderboardOpen ||
+      audioOpen ||
+      tutorialOpen ||
+      landscapeTipOpen)
   ) {
     event.preventDefault();
     if (tutorialOpen) {
       setTutorialOpen(false);
+    } else if (landscapeTipOpen) {
+      setLandscapeTipOpen(false);
     } else if (leaderboardOpen) {
       setLeaderboardOpen(false);
     } else if (audioOpen) {
@@ -1209,6 +1410,7 @@ window.addEventListener("keydown", (event) => {
     leaderboardOpen ||
     audioOpen ||
     tutorialOpen ||
+    landscapeTipOpen ||
     (event.target instanceof Element &&
       event.target.closest("button, input"))
   ) {
@@ -1263,6 +1465,12 @@ tutorialClose.addEventListener("click", () => {
   setTutorialOpen(false);
 });
 
+landscapeTip.addEventListener("click", (event) => {
+  if (!landscapeTipOpen) return;
+  event.preventDefault();
+  setLandscapeTipOpen(false);
+});
+
 musicVolumeInput.addEventListener("input", () => {
   volumeSettings.music = clampVolumePercent(
     musicVolumeInput.value,
@@ -1297,8 +1505,14 @@ effectsVolumeInput.addEventListener("change", async () => {
   audio.previewEffect();
 });
 
-window.addEventListener("resize", resizeCanvas);
-window.addEventListener("orientationchange", resizeCanvas);
+const handleViewportChange = (): void => {
+  resizeCanvas();
+  if (landscapeTipOpen && !isPortrait()) {
+    setLandscapeTipOpen(false);
+  }
+};
+window.addEventListener("resize", handleViewportChange);
+window.addEventListener("orientationchange", handleViewportChange);
 document.addEventListener("visibilitychange", () => {
   hidden = document.hidden;
   if (hidden) cancelActiveLauncherGesture();
@@ -1318,11 +1532,11 @@ const frame = (timestamp: number): void => {
 
   if (
     !hidden &&
-    !portraitPaused &&
     !settingsOpen &&
     !leaderboardOpen &&
     !audioOpen &&
-    !tutorialOpen
+    !tutorialOpen &&
+    !landscapeTipOpen
   ) {
     accumulator += elapsed;
     while (accumulator >= GameConfig.fixedStep) {
@@ -1353,6 +1567,7 @@ const startGame = async (): Promise<void> => {
       loadEffectSprites(),
       loadBackgroundSprites(),
     ]);
+  resizeCanvas();
   game = new Game(
     (event) => audio.play(event),
     sprites,
@@ -1365,7 +1580,6 @@ const startGame = async (): Promise<void> => {
   );
   reconcileActiveLauncher();
   lastTimestamp = performance.now();
-  resizeCanvas();
   updateHud();
   requestAnimationFrame(frame);
 };
