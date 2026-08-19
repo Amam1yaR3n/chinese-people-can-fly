@@ -344,7 +344,10 @@ const PORTRAIT_LAYOUT: PortraitLayout = {
   worldAnchorScreenX: 253,
   followScreenX: 253,
   sunScreen: { x: 396, y: 165 },
-  cloudCycleWidth: 540,
+  // 循环宽度必须大于 画布宽度 + 最宽云朵，否则云朵绕回时还来不及
+  // 完全移出屏幕右侧就会重新出现在画面内（“瞬移出现”）。竖屏画布
+  // 506px、最宽云朵 384px，因此至少需要 890px，这里留出余量。
+  cloudCycleWidth: 920,
   cloudScreens: [
     { x: 55, y: 150 },
     { x: 205, y: 305 },

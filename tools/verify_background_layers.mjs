@@ -316,6 +316,22 @@ try {
   );
   assert.ok(farAway.some(({ image }) => image.id === "ground"));
 
+  const { applyViewport } = await server.ssrLoadModule(
+    "/src/game/config.ts",
+  );
+  applyViewport(true);
+  const portraitWidth = GameConfig.logicalWidth;
+  const portraitCycle = GameConfig.background.cloudCycleWidth;
+  for (let index = 0; index < BackgroundPoses.clouds.length; index += 1) {
+    const pose = BackgroundPoses.clouds[index];
+    const cloudWidth = pose.frame.width * pose.scale;
+    assert.ok(
+      portraitCycle - portraitWidth >= cloudWidth,
+      `Portrait cloud ${index + 1} must fully leave the viewport ` +
+        "before wrapping back in; widen the portrait cloud cycle.",
+    );
+  }
+
   console.log("Background layer verification passed.");
 } finally {
   await server.close();

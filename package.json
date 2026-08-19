@@ -17,7 +17,8 @@
     "verify:promotion": "node tools/verify_promotion_ui.mjs",
     "verify:unlocks": "node tools/verify_launcher_unlocks.mjs",
     "verify:missile-flame": "node tools/verify_missile_tail_flame.mjs",
-    "verify:ufo": "node tools/verify_ufo_gameplay.mjs"
+    "verify:ufo": "node tools/verify_ufo_gameplay.mjs",
+    "verify:camera-follow": "node tools/verify_camera_follow.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

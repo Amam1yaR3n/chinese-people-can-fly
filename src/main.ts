@@ -339,6 +339,7 @@ let landscapeTipOpen = false;
 let unlockNoticePending = false;
 let gameEnded = false;
 let musicPreviewTimer: number | null = null;
+let viewportCheckCounter = 0;
 
 type ActiveLauncherInput =
   | { readonly kind: "pointer"; readonly pointerId: number }
@@ -1081,10 +1082,18 @@ renderVolumeControl(
 );
 renderLauncherGrid();
 
+// iOS WebViews can resize the canvas box without reliably firing resize or
+// orientationchange events, or can fire them against a transitional viewport.
+// Detect the layout from the canvas box itself (which reflects the CSS media
+// query the player actually sees), falling back to the orientation helpers.
+const detectPortraitViewport = (): boolean => {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) return rect.height > rect.width;
+  return isPortrait();
+};
+
 const resizeCanvas = (): void => {
-  const viewportChanged = applyViewport(
-    window.matchMedia("(orientation: portrait)").matches,
-  );
+  const viewportChanged = applyViewport(detectPortraitViewport());
   if (viewportChanged) game?.onViewportChanged();
   const pixelRatio = clampPixelRatio(window.devicePixelRatio || 1);
   const width = Math.round(GameConfig.logicalWidth * pixelRatio);
@@ -1169,6 +1178,9 @@ const toLogicalPosition = (clientX: number, clientY: number): Vec2 => {
 
 const pointerEventSupported = typeof window.PointerEvent !== "undefined";
 const touchEventSupported = "ontouchstart" in window;
+const GESTURE_DEDUP_MS = 120;
+let lastTouchStartHandledAt = Number.NEGATIVE_INFINITY;
+let lastPointerTouchHandledAt = Number.NEGATIVE_INFINITY;
 
 const isGameplayInputBlocked = (target: EventTarget | null): boolean =>
   settingsOpen ||
@@ -1185,13 +1197,22 @@ const isGameplayInputBlocked = (target: EventTarget | null): boolean =>
 window.addEventListener(
   "pointerdown",
   (event) => {
-    // Touch input is handled by the touch event listeners below, which older
-    // iOS WebViews deliver reliably; skip touch-synthesized pointer events so
-    // a single tap is not processed twice.
-    if (touchEventSupported && event.pointerType === "touch") return;
+    // Pointer events are the primary input path on modern browsers, including
+    // iOS 13+. Some WebViews also dispatch a matching touchstart; dedupe so a
+    // single contact is never processed twice while still accepting input
+    // from whichever event family the WebView delivers first.
+    if (
+      event.pointerType === "touch" &&
+      performance.now() - lastTouchStartHandledAt < GESTURE_DEDUP_MS
+    ) {
+      return;
+    }
     if (isGameplayInputBlocked(event.target)) return;
     const currentGame = game;
     if (!currentGame) return;
+    if (event.pointerType === "touch") {
+      lastPointerTouchHandledAt = performance.now();
+    }
     event.preventDefault();
     void audio.unlock();
     applyPendingGameLauncher();
@@ -1288,6 +1309,13 @@ window.addEventListener(
     if (!touch) return;
     const currentGame = game;
     if (!currentGame) return;
+    // Modern browsers deliver a pointerdown before this touchstart for the
+    // same contact; skip the duplicate. Older iOS WebViews without pointer
+    // support never set this, so touch remains their reliable fallback.
+    if (performance.now() - lastPointerTouchHandledAt < GESTURE_DEDUP_MS) {
+      return;
+    }
+    lastTouchStartHandledAt = performance.now();
     event.preventDefault();
     void audio.unlock();
     applyPendingGameLauncher();
@@ -1524,6 +1552,14 @@ document.addEventListener("visibilitychange", () => {
 
 const frame = (timestamp: number): void => {
   if (!game) return;
+  // Self-heal any drift between the applied game layout and the canvas the
+  // player actually sees. applyViewport and the canvas resize are no-ops when
+  // nothing changed, so this stays cheap.
+  viewportCheckCounter += 1;
+  if (viewportCheckCounter >= 30) {
+    viewportCheckCounter = 0;
+    resizeCanvas();
+  }
   const elapsed = Math.min(
     GameConfig.maxFrameDelta,
     Math.max(0, (timestamp - lastTimestamp) / 1000),

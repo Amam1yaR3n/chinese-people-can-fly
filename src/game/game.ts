@@ -1371,7 +1371,15 @@ export class Game {
       this.camera.x = Math.max(this.camera.x, nextCameraX);
     }
 
-    if (this.powerUp.mode !== "normal") {
+    // 普通飞行时，只要角色爬升越过纵向跟随线就开启平滑跟拍，避免开局
+    // 被发射上天后飞出画面顶部；吃到飞行道具时始终开启。
+    const playerScreenY =
+      GameConfig.groundScreenY +
+      (this.player.pos.y - this.camera.y) * pixelsPerMeter;
+    if (
+      this.powerUp.mode !== "normal" ||
+      playerScreenY < GameConfig.camera.verticalFollowScreenY
+    ) {
       this.verticalTrackingActive = true;
     }
     if (!this.verticalTrackingActive) return;
