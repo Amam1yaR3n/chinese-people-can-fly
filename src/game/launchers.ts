@@ -4,10 +4,23 @@ export type LauncherId =
   | "humanCannon"
   | "missileTruck";
 
+export type LauncherUnlockRequirement =
+  | "always"
+  | "liked"
+  | "coined"
+  | "favorited";
+
+export interface LauncherUnlockState {
+  readonly liked: boolean;
+  readonly coinCount: number;
+  readonly favorited: boolean;
+}
+
 export interface LauncherDefinition {
   readonly id: LauncherId;
   readonly name: string;
-  readonly unlockDistance: number;
+  readonly unlockRequirement: LauncherUnlockRequirement;
+  readonly unlockHint: string;
   readonly iconPath: string;
   readonly implemented: boolean;
 }
@@ -18,28 +31,32 @@ export const LAUNCHERS: readonly LauncherDefinition[] = [
   {
     id: "blackEagle",
     name: "神鹰黑手哥",
-    unlockDistance: 0,
+    unlockRequirement: "always",
+    unlockHint: "默认装置",
     iconPath: "./assets/characters/batter/swing-01.png",
     implemented: true,
   },
   {
     id: "slingshot",
     name: "弹弓",
-    unlockDistance: 2_000,
+    unlockRequirement: "liked",
+    unlockHint: "点赞视频解锁",
     iconPath: "./assets/characters/launchers/slingshot.png",
     implemented: true,
   },
   {
     id: "humanCannon",
     name: "人间大炮",
-    unlockDistance: 5_000,
+    unlockRequirement: "coined",
+    unlockHint: "投币解锁",
     iconPath: "./assets/characters/launchers/human-cannon.png",
     implemented: true,
   },
   {
     id: "missileTruck",
-    name: "东风导弹发射车",
-    unlockDistance: 10_000,
+    name: "东风快递发射车",
+    unlockRequirement: "favorited",
+    unlockHint: "收藏视频解锁",
     iconPath: "./assets/characters/launchers/missile-truck.png",
     implemented: true,
   },
@@ -59,11 +76,22 @@ export const getLauncherDefinition = (
 
 export const isLauncherUnlocked = (
   launcher: LauncherDefinition,
-  bestDistance: number,
-): boolean => bestDistance >= launcher.unlockDistance;
+  unlockState: LauncherUnlockState | null,
+): boolean => {
+  switch (launcher.unlockRequirement) {
+    case "always":
+      return true;
+    case "liked":
+      return unlockState?.liked === true;
+    case "coined":
+      return (unlockState?.coinCount ?? 0) > 0;
+    case "favorited":
+      return unlockState?.favorited === true;
+  }
+};
 
 export const isLauncherSelectable = (
   launcher: LauncherDefinition,
-  bestDistance: number,
+  unlockState: LauncherUnlockState | null,
 ): boolean =>
-  launcher.implemented && isLauncherUnlocked(launcher, bestDistance);
+  launcher.implemented && isLauncherUnlocked(launcher, unlockState);

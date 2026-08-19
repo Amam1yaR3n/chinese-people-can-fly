@@ -7,10 +7,13 @@ import {
 import { GameConfig } from "./game/config";
 import { Game } from "./game/game";
 import {
+  DEFAULT_LAUNCHER_ID,
   LAUNCHERS,
+  getLauncherDefinition,
   isLauncherSelectable,
   isLauncherUnlocked,
   type LauncherId,
+  type LauncherUnlockState,
 } from "./game/launchers";
 import {
   createLeaderboardScoreQueue,
@@ -31,9 +34,14 @@ import {
   loadSlingshotSprites,
 } from "./game/sprites";
 import type { GamePhase, Vec2 } from "./game/types";
-import type {
-  ToyMyRankReadResult,
-  ToyRankItem,
+import {
+  navigateToy,
+  prepareToyNavigation,
+  readToyAuthorVideos,
+  readToyVideoUserActions,
+  type ToyMyRankReadResult,
+  type ToyNavigationRequest,
+  type ToyRankItem,
 } from "./platform/toy-sdk";
 
 interface VolumeSettings {
@@ -41,10 +49,19 @@ interface VolumeSettings {
   effects: number;
 }
 
+type LauncherAccessStatus = "loading" | "ready" | "unavailable" | "error";
+
+type FeaturedVideoLoadResult =
+  | { readonly status: "ok"; readonly aid: number }
+  | { readonly status: "unavailable" | "error" };
+
 const VOLUME_STORAGE_KEY = "chinese-people-can-fly:volume-settings";
 const TUTORIAL_STORAGE_KEY = "chinese-people-can-fly:tutorial-shown";
 const UNLOCK_NOTICE_STORAGE_KEY =
-  "chinese-people-can-fly:launcher-unlock-notice";
+  "chinese-people-can-fly:interaction-unlock-notice-v1";
+const AUTHOR_ID = "137429365";
+const FEATURED_VIDEO_BVID = "BV1VBbk6EEJP";
+const NAVIGATION_STATUS_DURATION_MS = 3_000;
 const DEFAULT_VOLUME_SETTINGS: VolumeSettings = {
   music: 48,
   effects: 72,
@@ -126,6 +143,9 @@ const scoreOutput = document.querySelector<HTMLOutputElement>("#score");
 const leaderboardButton = document.querySelector<HTMLButtonElement>(
   "#leaderboard-button",
 );
+const audioButton = document.querySelector<HTMLButtonElement>("#audio-button");
+const audioDialog = document.querySelector<HTMLElement>("#audio-dialog");
+const audioClose = document.querySelector<HTMLButtonElement>("#audio-close");
 const leaderboardDialog = document.querySelector<HTMLElement>(
   "#leaderboard-dialog",
 );
@@ -177,8 +197,32 @@ const settingsClose = document.querySelector<HTMLButtonElement>(
   "#settings-close",
 );
 const launcherGrid = document.querySelector<HTMLElement>("#launcher-grid");
+const launcherAccessStatus = document.querySelector<HTMLElement>(
+  "#launcher-access-status",
+);
+const launcherAccessStatusText = document.querySelector<HTMLElement>(
+  "#launcher-access-status-text",
+);
+const launcherAccessRetry = document.querySelector<HTMLButtonElement>(
+  "#launcher-access-retry",
+);
 const bestDistanceOutput = document.querySelector<HTMLOutputElement>(
   "#best-distance",
+);
+const authorHomeButton = document.querySelector<HTMLButtonElement>(
+  "#author-home-button",
+);
+const featuredVideoButton = document.querySelector<HTMLButtonElement>(
+  "#featured-video-button",
+);
+const featuredVideoTitle = document.querySelector<HTMLElement>(
+  "#featured-video-title",
+);
+const featuredVideoImage = document.querySelector<HTMLImageElement>(
+  "#featured-video-image",
+);
+const promotionStatus = document.querySelector<HTMLElement>(
+  "#promotion-status",
 );
 const musicVolumeInput = document.querySelector<HTMLInputElement>(
   "#music-volume",
@@ -198,6 +242,9 @@ if (
   !distanceOutput ||
   !scoreOutput ||
   !leaderboardButton ||
+  !audioButton ||
+  !audioDialog ||
+  !audioClose ||
   !leaderboardDialog ||
   !leaderboardClose ||
   !leaderboardContent ||
@@ -221,7 +268,15 @@ if (
   !settingsDialog ||
   !settingsClose ||
   !launcherGrid ||
+  !launcherAccessStatus ||
+  !launcherAccessStatusText ||
+  !launcherAccessRetry ||
   !bestDistanceOutput ||
+  !authorHomeButton ||
+  !featuredVideoButton ||
+  !featuredVideoTitle ||
+  !featuredVideoImage ||
+  !promotionStatus ||
   !musicVolumeInput ||
   !musicVolumeOutput ||
   !effectsVolumeInput ||
@@ -249,14 +304,22 @@ let hidden = document.hidden;
 let portraitPaused = false;
 let settingsOpen = false;
 let leaderboardOpen = false;
+let audioOpen = false;
 let tutorialOpen = false;
 let unlockNoticePending = false;
 let gameEnded = false;
 let musicPreviewTimer: number | null = null;
 let activeLauncherPointerId: number | null = null;
-let pendingCloudLauncher: LauncherId | null = null;
+let pendingGameLauncher: LauncherId | null = null;
 let roundHasInteraction = false;
 let leaderboardRequestId = 0;
+let promotionStatusTimer: number | null = null;
+let currentVideoAid: number | null = null;
+let featuredVideoLoadPromise: Promise<FeaturedVideoLoadResult> | null = null;
+let launcherAccessRefreshPromise: Promise<void> | null = null;
+let launcherUnlockState: LauncherUnlockState | null = null;
+let lastConfirmedUnlockState: LauncherUnlockState | null = null;
+let launcherAccessState: LauncherAccessStatus = "loading";
 
 const updateAudioPause = (): void => {
   audio.setPaused(
@@ -264,6 +327,7 @@ const updateAudioPause = (): void => {
       portraitPaused ||
       settingsOpen ||
       leaderboardOpen ||
+      audioOpen ||
       tutorialOpen ||
       gameEnded,
   );
@@ -299,18 +363,47 @@ const cancelActiveLauncherGesture = (): void => {
   }
 };
 
-const applyPendingCloudLauncher = (): void => {
+const applyPendingGameLauncher = (): void => {
   if (
     !game ||
-    !pendingCloudLauncher ||
+    !pendingGameLauncher ||
     roundHasInteraction ||
     game.getSnapshot().phase !== "ready"
   ) {
     return;
   }
 
-  game.setLauncher(pendingCloudLauncher);
-  pendingCloudLauncher = null;
+  game.setLauncher(pendingGameLauncher);
+  pendingGameLauncher = null;
+};
+
+const desiredLauncherId = (): LauncherId => {
+  const preferredLauncher = getLauncherDefinition(progress.selectedLauncher);
+  return isLauncherSelectable(preferredLauncher, launcherUnlockState)
+    ? preferredLauncher.id
+    : DEFAULT_LAUNCHER_ID;
+};
+
+const reconcileActiveLauncher = (): void => {
+  const desiredLauncher = desiredLauncherId();
+  if (!game) {
+    pendingGameLauncher = desiredLauncher;
+    return;
+  }
+
+  const snapshot = game.getSnapshot();
+  if (snapshot.launcherId === desiredLauncher) {
+    pendingGameLauncher = null;
+    return;
+  }
+
+  if (snapshot.phase === "ready" && !roundHasInteraction) {
+    game.setLauncher(desiredLauncher);
+    pendingGameLauncher = null;
+    return;
+  }
+
+  pendingGameLauncher = desiredLauncher;
 };
 
 const finishGameInput = (phaseBeforeInput: GamePhase): void => {
@@ -318,14 +411,47 @@ const finishGameInput = (phaseBeforeInput: GamePhase): void => {
   const resetFromResult =
     phaseBeforeInput === "ended" && game.getSnapshot().phase === "ready";
   roundHasInteraction = !resetFromResult;
-  if (resetFromResult) applyPendingCloudLauncher();
+  if (resetFromResult) applyPendingGameLauncher();
+};
+
+const renderLauncherAccessStatus = (): void => {
+  launcherGrid.setAttribute(
+    "aria-busy",
+    String(launcherAccessState === "loading"),
+  );
+
+  if (launcherAccessState === "ready") {
+    launcherAccessStatus.hidden = true;
+    launcherAccessRetry.hidden = true;
+    launcherAccessRetry.disabled = true;
+    return;
+  }
+
+  launcherAccessStatus.hidden = false;
+  if (launcherAccessState === "loading") {
+    launcherAccessStatusText.textContent = "正在核验视频互动状态…";
+    launcherAccessRetry.hidden = true;
+    launcherAccessRetry.disabled = true;
+    return;
+  }
+
+  launcherAccessStatusText.textContent =
+    launcherAccessState === "unavailable"
+      ? "当前环境无法核验，请在已登录的 B站内打开"
+      : "无法核验互动状态，请登录 B站或检查网络后重试";
+  launcherAccessRetry.hidden = false;
+  launcherAccessRetry.disabled = false;
 };
 
 const renderLauncherGrid = (): void => {
+  const confirmedUnlockState =
+    launcherAccessState === "ready" ? launcherUnlockState : null;
+  const activeLauncher =
+    game?.getSnapshot().launcherId ?? DEFAULT_LAUNCHER_ID;
   const cards = LAUNCHERS.map((launcher) => {
-    const unlocked = isLauncherUnlocked(launcher, progress.bestDistance);
-    const selectable = isLauncherSelectable(launcher, progress.bestDistance);
-    const selected = launcher.id === progress.selectedLauncher;
+    const unlocked = isLauncherUnlocked(launcher, confirmedUnlockState);
+    const selectable = isLauncherSelectable(launcher, confirmedUnlockState);
+    const selected = launcher.id === activeLauncher;
     const card = document.createElement("button");
     card.type = "button";
     card.className = "launcher-card";
@@ -335,12 +461,6 @@ const renderLauncherGrid = (): void => {
     card.classList.toggle("is-selected", selected);
     card.setAttribute("aria-pressed", String(selected));
     card.setAttribute("aria-disabled", String(!selectable));
-    card.setAttribute(
-      "aria-label",
-      unlocked
-        ? `${launcher.name}${selectable ? "" : "，尚不可用"}`
-        : `未解锁，${launcher.unlockDistance} 米解锁`,
-    );
 
     const iconArea = document.createElement("span");
     iconArea.className = "launcher-card-icon";
@@ -356,9 +476,19 @@ const renderLauncherGrid = (): void => {
 
     const detail = document.createElement("small");
     detail.className = "launcher-card-detail";
-    detail.textContent = unlocked
-      ? "\u00a0"
-      : `${launcher.unlockDistance}m 解锁`;
+    detail.textContent = !launcher.implemented
+      ? "尚不可用"
+      : !unlocked
+        ? launcher.unlockHint
+        : selected
+          ? "当前使用"
+          : launcher.unlockRequirement === "always"
+            ? launcher.unlockHint
+            : "已解锁";
+    card.setAttribute(
+      "aria-label",
+      `${unlocked ? launcher.name : "未解锁装置"}，${detail.textContent}`,
+    );
 
     card.append(iconArea, name, detail);
     card.addEventListener("click", () => {
@@ -367,7 +497,7 @@ const renderLauncherGrid = (): void => {
         ...progress,
         selectedLauncher: launcher.id,
       });
-      pendingCloudLauncher = null;
+      pendingGameLauncher = null;
       roundHasInteraction = false;
       game?.setLauncher(progress.selectedLauncher);
       queueCloudProgressSave(progress);
@@ -378,6 +508,7 @@ const renderLauncherGrid = (): void => {
   });
 
   launcherGrid.replaceChildren(...cards);
+  renderLauncherAccessStatus();
   bestDistanceOutput.value = `${progress.bestDistance}米`;
   bestDistanceOutput.textContent = bestDistanceOutput.value;
 };
@@ -392,7 +523,7 @@ const stopMusicPreview = (): void => {
 
 const previewMusic = async (): Promise<void> => {
   await audio.unlock();
-  if (!settingsOpen || hidden || portraitPaused) return;
+  if (!audioOpen || hidden || portraitPaused) return;
   if (musicPreviewTimer !== null) window.clearTimeout(musicPreviewTimer);
   audio.setPaused(false);
   musicPreviewTimer = window.setTimeout(() => {
@@ -404,7 +535,7 @@ const previewMusic = async (): Promise<void> => {
 const formatRankScore = (score: number): string =>
   `${score.toLocaleString("zh-CN")} 分`;
 
-const normalizeAvatarUrl = (value: string): string | null => {
+const normalizeRemoteUrl = (value: string): string | null => {
   const candidate = value.trim();
   if (!candidate) return null;
   if (candidate.startsWith("//")) return `https:${candidate}`;
@@ -417,6 +548,159 @@ const normalizeAvatarUrl = (value: string): string | null => {
   } catch {
     return null;
   }
+};
+
+const fallbackVideoCoverUrl = new URL(
+  featuredVideoImage.dataset.fallbackSrc ?? featuredVideoImage.src,
+  document.baseURI,
+).href;
+
+featuredVideoImage.addEventListener("error", () => {
+  if (featuredVideoImage.src !== fallbackVideoCoverUrl) {
+    featuredVideoImage.src = fallbackVideoCoverUrl;
+  }
+});
+
+const clearPromotionStatus = (): void => {
+  if (promotionStatusTimer !== null) {
+    window.clearTimeout(promotionStatusTimer);
+    promotionStatusTimer = null;
+  }
+  promotionStatus.textContent = "";
+  promotionStatus.hidden = true;
+};
+
+const showPromotionStatus = (message: string): void => {
+  if (promotionStatusTimer !== null) {
+    window.clearTimeout(promotionStatusTimer);
+  }
+  promotionStatus.textContent = message;
+  promotionStatus.hidden = false;
+  promotionStatusTimer = window.setTimeout(() => {
+    promotionStatusTimer = null;
+    promotionStatus.textContent = "";
+    promotionStatus.hidden = true;
+  }, NAVIGATION_STATUS_DURATION_MS);
+};
+
+const requestPromotionNavigation = (request: ToyNavigationRequest): void => {
+  clearPromotionStatus();
+  const navigation = navigateToy(request);
+  void navigation.then((result) => {
+    if (result.status !== "ok") {
+      showPromotionStatus("请在 B站内打开后重试");
+    }
+  });
+};
+
+const loadFeaturedVideo = (): Promise<FeaturedVideoLoadResult> => {
+  if (currentVideoAid !== null) {
+    return Promise.resolve({ status: "ok", aid: currentVideoAid });
+  }
+  if (featuredVideoLoadPromise) return featuredVideoLoadPromise;
+
+  const request = (async (): Promise<FeaturedVideoLoadResult> => {
+    const result = await readToyAuthorVideos({
+      videos: [{ bvid: FEATURED_VIDEO_BVID }],
+    });
+    if (result.status !== "ok") return result;
+
+    const video = result.items.find(
+      ({ bvid }) => bvid === FEATURED_VIDEO_BVID,
+    );
+    if (!video) return { status: "error" };
+
+    currentVideoAid = video.aid;
+    featuredVideoTitle.textContent = video.title;
+    featuredVideoButton.setAttribute("aria-label", `播放：${video.title}`);
+    const coverUrl = normalizeRemoteUrl(video.cover);
+    if (coverUrl) featuredVideoImage.src = coverUrl;
+    return { status: "ok", aid: video.aid };
+  })();
+
+  featuredVideoLoadPromise = request;
+  void request.then(() => {
+    if (featuredVideoLoadPromise === request) featuredVideoLoadPromise = null;
+  });
+  return request;
+};
+
+const hasNewInteractionUnlock = (
+  previous: LauncherUnlockState,
+  next: LauncherUnlockState,
+): boolean =>
+  LAUNCHERS.some(
+    (launcher) =>
+      launcher.unlockRequirement !== "always" &&
+      !isLauncherUnlocked(launcher, previous) &&
+      isLauncherUnlocked(launcher, next),
+  );
+
+const refreshLauncherAccess = (): Promise<void> => {
+  if (launcherAccessRefreshPromise) return launcherAccessRefreshPromise;
+
+  launcherAccessState = "loading";
+  renderLauncherGrid();
+  const request = (async (): Promise<void> => {
+    const videoResult = await loadFeaturedVideo();
+    if (videoResult.status !== "ok") {
+      launcherAccessState = videoResult.status;
+      launcherUnlockState = null;
+      reconcileActiveLauncher();
+      renderLauncherGrid();
+      return;
+    }
+
+    const actionResult = await readToyVideoUserActions({
+      aids: [videoResult.aid],
+    });
+    if (actionResult.status !== "ok") {
+      launcherAccessState = actionResult.status;
+      launcherUnlockState = null;
+      reconcileActiveLauncher();
+      renderLauncherGrid();
+      return;
+    }
+
+    const actions = actionResult.items.find(
+      ({ aid }) => aid === videoResult.aid,
+    );
+    if (!actions) {
+      launcherAccessState = "error";
+      launcherUnlockState = null;
+      reconcileActiveLauncher();
+      renderLauncherGrid();
+      return;
+    }
+
+    const nextUnlockState: LauncherUnlockState = {
+      liked: actions.liked,
+      coinCount: actions.coinCount,
+      favorited: actions.favorited,
+    };
+    if (
+      lastConfirmedUnlockState &&
+      hasNewInteractionUnlock(lastConfirmedUnlockState, nextUnlockState)
+    ) {
+      unlockNoticePending = true;
+      saveUnlockNoticePending(true);
+      setUnlockNoticeVisible(true);
+    }
+
+    lastConfirmedUnlockState = nextUnlockState;
+    launcherUnlockState = nextUnlockState;
+    launcherAccessState = "ready";
+    reconcileActiveLauncher();
+    renderLauncherGrid();
+  })();
+
+  launcherAccessRefreshPromise = request;
+  void request.then(() => {
+    if (launcherAccessRefreshPromise === request) {
+      launcherAccessRefreshPromise = null;
+    }
+  });
+  return request;
 };
 
 const renderMyRank = (result: ToyMyRankReadResult | null): void => {
@@ -490,7 +774,7 @@ const renderLeaderboardList = (
     avatarFallback.textContent = Array.from(nickname)[0] ?? "飞";
     avatar.append(avatarFallback);
 
-    const avatarUrl = normalizeAvatarUrl(item.avatar);
+    const avatarUrl = normalizeRemoteUrl(item.avatar);
     if (avatarUrl) {
       const image = document.createElement("img");
       image.src = avatarUrl;
@@ -555,9 +839,41 @@ const refreshLeaderboard = async (): Promise<void> => {
   renderLeaderboardList(result.list.items, result.mine);
 };
 
+const setAudioOpen = (open: boolean, restoreFocus = true): void => {
+  if (audioOpen === open) return;
+  if (open) {
+    if (settingsOpen) setSettingsOpen(false, false);
+    if (leaderboardOpen) setLeaderboardOpen(false, false);
+    cancelActiveLauncherGesture();
+  }
+
+  audioOpen = open;
+  audioDialog.hidden = !open;
+  audioButton.setAttribute("aria-expanded", String(open));
+  audioButton.setAttribute(
+    "aria-label",
+    open ? "关闭声音设置" : "打开声音设置",
+  );
+  document.body.toggleAttribute("data-audio-open", open);
+  accumulator = 0;
+  stopMusicPreview();
+
+  if (open) {
+    void audio.unlock();
+    audioClose.focus({ preventScroll: true });
+    return;
+  }
+
+  if (restoreFocus) audioButton.focus({ preventScroll: true });
+};
+
 const setSettingsOpen = (open: boolean, restoreFocus = true): void => {
   if (settingsOpen === open) return;
-  if (open) cancelActiveLauncherGesture();
+  if (open) {
+    if (audioOpen) setAudioOpen(false, false);
+    if (leaderboardOpen) setLeaderboardOpen(false, false);
+    cancelActiveLauncherGesture();
+  }
   settingsOpen = open;
   settingsDialog.hidden = !open;
   settingsButton.setAttribute("aria-expanded", String(open));
@@ -571,6 +887,7 @@ const setSettingsOpen = (open: boolean, restoreFocus = true): void => {
 
   if (open) {
     void audio.unlock();
+    void refreshLauncherAccess();
     settingsClose.focus({ preventScroll: true });
     return;
   }
@@ -583,6 +900,7 @@ const setLeaderboardOpen = (open: boolean, restoreFocus = true): void => {
   if (open) {
     leaderboardOpen = true;
     if (settingsOpen) setSettingsOpen(false, false);
+    if (audioOpen) setAudioOpen(false, false);
     cancelActiveLauncherGesture();
   } else {
     leaderboardOpen = false;
@@ -625,16 +943,6 @@ const setTutorialOpen = (open: boolean): void => {
   settingsButton.focus({ preventScroll: true });
 };
 
-const hasNewlyUnlockedLauncher = (
-  previousBestDistance: number,
-  nextBestDistance: number,
-): boolean =>
-  LAUNCHERS.some(
-    (launcher) =>
-      launcher.unlockDistance > previousBestDistance &&
-      launcher.unlockDistance <= nextBestDistance,
-  );
-
 const progressMatches = (
   first: ProgressV1,
   second: ProgressV1,
@@ -661,10 +969,7 @@ const syncProgressFromCloud = async (
 
   if (localNeedsUpdate) {
     progress = saveProgress(mergedProgress);
-    if (game) {
-      pendingCloudLauncher = progress.selectedLauncher;
-      applyPendingCloudLauncher();
-    }
+    reconcileActiveLauncher();
     renderLauncherGrid();
     updateHud();
   }
@@ -772,21 +1077,10 @@ const updateHud = (): void => {
     leaderboardScoreQueue.enqueue(snapshot.score);
   }
   if (snapshot.ended && !gameEnded) {
-    const previousBestDistance = progress.bestDistance;
     const nextProgress = recordCompletedDistance(progress, snapshot.distance);
     if (nextProgress !== progress) {
       progress = nextProgress;
       queueCloudProgressSave(progress);
-      if (
-        hasNewlyUnlockedLauncher(
-          previousBestDistance,
-          progress.bestDistance,
-        )
-      ) {
-        unlockNoticePending = true;
-        saveUnlockNoticePending(true);
-        setUnlockNoticeVisible(true);
-      }
       renderLauncherGrid();
     }
   }
@@ -810,13 +1104,14 @@ const performAction = (): void => {
     portraitPaused ||
     settingsOpen ||
     leaderboardOpen ||
+    audioOpen ||
     tutorialOpen ||
     !game
   ) {
     return;
   }
   void audio.unlock();
-  applyPendingCloudLauncher();
+  applyPendingGameLauncher();
   const phaseBeforeInput = game.getSnapshot().phase;
   game.action();
   finishGameInput(phaseBeforeInput);
@@ -842,16 +1137,17 @@ window.addEventListener(
     if (
       settingsOpen ||
       leaderboardOpen ||
+      audioOpen ||
       tutorialOpen ||
       (target instanceof Element &&
-        target.closest("#settings-button, #leaderboard-button"))
+        target.closest("#settings-button, #leaderboard-button, #audio-button"))
     ) {
       return;
     }
     if (hidden || portraitPaused || !game) return;
     event.preventDefault();
     void audio.unlock();
-    applyPendingCloudLauncher();
+    applyPendingGameLauncher();
     const phaseBeforeInput = game.getSnapshot().phase;
     const beganLauncherDrag = game.pointerDown(
       pointerToLogicalPosition(event),
@@ -907,13 +1203,15 @@ canvas.addEventListener("lostpointercapture", (event) => {
 window.addEventListener("keydown", (event) => {
   if (
     event.code === "Escape" &&
-    (settingsOpen || leaderboardOpen || tutorialOpen)
+    (settingsOpen || leaderboardOpen || audioOpen || tutorialOpen)
   ) {
     event.preventDefault();
     if (tutorialOpen) {
       setTutorialOpen(false);
     } else if (leaderboardOpen) {
       setLeaderboardOpen(false);
+    } else if (audioOpen) {
+      setAudioOpen(false);
     } else {
       setSettingsOpen(false);
     }
@@ -923,6 +1221,7 @@ window.addEventListener("keydown", (event) => {
   if (
     settingsOpen ||
     leaderboardOpen ||
+    audioOpen ||
     tutorialOpen ||
     (event.target instanceof Element &&
       event.target.closest("button, input"))
@@ -935,7 +1234,6 @@ window.addEventListener("keydown", (event) => {
 
 settingsButton.addEventListener("click", () => {
   dismissUnlockNotice();
-  if (leaderboardOpen) setLeaderboardOpen(false, false);
   setSettingsOpen(!settingsOpen);
 });
 
@@ -949,6 +1247,26 @@ leaderboardButton.addEventListener("click", () => {
 
 leaderboardClose.addEventListener("click", () => {
   setLeaderboardOpen(false);
+});
+
+audioButton.addEventListener("click", () => {
+  setAudioOpen(!audioOpen);
+});
+
+audioClose.addEventListener("click", () => {
+  setAudioOpen(false);
+});
+
+authorHomeButton.addEventListener("click", () => {
+  requestPromotionNavigation({ type: "space", id: AUTHOR_ID });
+});
+
+featuredVideoButton.addEventListener("click", () => {
+  requestPromotionNavigation({ type: "video", id: FEATURED_VIDEO_BVID });
+});
+
+launcherAccessRetry.addEventListener("click", () => {
+  void refreshLauncherAccess();
 });
 
 leaderboardRetry.addEventListener("click", () => {
@@ -998,6 +1316,7 @@ window.addEventListener("orientationchange", resizeCanvas);
 document.addEventListener("visibilitychange", () => {
   hidden = document.hidden;
   if (hidden) cancelActiveLauncherGesture();
+  else void refreshLauncherAccess();
   accumulator = 0;
   lastTimestamp = performance.now();
   updateAudioPause();
@@ -1016,6 +1335,7 @@ const frame = (timestamp: number): void => {
     !portraitPaused &&
     !settingsOpen &&
     !leaderboardOpen &&
+    !audioOpen &&
     !tutorialOpen
   ) {
     accumulator += elapsed;
@@ -1053,10 +1373,11 @@ const startGame = async (): Promise<void> => {
     slingshotSprites,
     humanCannonSprites,
     missileTruckSprites,
-    progress.selectedLauncher,
+    DEFAULT_LAUNCHER_ID,
     effectSprites,
     backgroundSprites,
   );
+  reconcileActiveLauncher();
   lastTimestamp = performance.now();
   resizeCanvas();
   updateHud();
@@ -1072,4 +1393,6 @@ setUnlockNoticeVisible(unlockNoticePending);
 
 const progressAtCloudSyncStart = progress;
 void syncProgressFromCloud(progressAtCloudSyncStart);
+void prepareToyNavigation();
+void refreshLauncherAccess();
 void startGame();

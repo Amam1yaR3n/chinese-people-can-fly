@@ -2,11 +2,6 @@ import {
   readToyCloudStorage,
   writeToyCloudStorage,
 } from "../platform/toy-sdk";
-import {
-  DEFAULT_LAUNCHER_ID,
-  getLauncherDefinition,
-  isLauncherSelectable,
-} from "./launchers";
 import { sanitizeProgress, type ProgressV1 } from "./progress";
 
 const CLOUD_PROGRESS_KEY = "chinese-people-can-fly-progress-v1";
@@ -55,13 +50,9 @@ export const mergeProgress = (
   const preferLocal =
     preferCurrentSelection ||
     localProgress.bestDistance > cloudProgress.bestDistance;
-  const selectionCandidates = preferLocal
-    ? [localProgress.selectedLauncher, cloudProgress.selectedLauncher]
-    : [cloudProgress.selectedLauncher, localProgress.selectedLauncher];
-  const selectedLauncher =
-    selectionCandidates.find((launcherId) =>
-      isLauncherSelectable(getLauncherDefinition(launcherId), bestDistance),
-    ) ?? DEFAULT_LAUNCHER_ID;
+  const selectedLauncher = preferLocal
+    ? localProgress.selectedLauncher
+    : cloudProgress.selectedLauncher;
 
   return { version: 1, bestDistance, selectedLauncher };
 };

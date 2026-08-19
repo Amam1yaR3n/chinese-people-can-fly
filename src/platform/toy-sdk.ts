@@ -8,8 +8,12 @@ export const TOY_SCORE_MIN = -16_777_216;
 export const TOY_SCORE_MAX = 16_777_215;
 
 export type ToyRankPeriod = "all" | "month" | "week" | "day";
+export type ToyNavigationType = "video" | "space";
 
 type ToyAbility =
+  | "navigate"
+  | "getAuthorVideos"
+  | "getVideoUserActions"
   | "getCloudStorage"
   | "setCloudStorage"
   | "submitScore"
@@ -25,6 +29,13 @@ export interface ToyRankItem {
 
 interface ToySdk {
   isSupport(ability: ToyAbility): Promise<boolean>;
+  navigate?(request: ToyNavigationRequest): Promise<void>;
+  getAuthorVideos?(request: {
+    videos: readonly { bvid: string }[];
+  }): Promise<unknown>;
+  getVideoUserActions?(request: {
+    aids: readonly number[];
+  }): Promise<unknown>;
   getCloudStorage?(keys?: string[]): Promise<Record<string, string>>;
   setCloudStorage?(items: Record<string, string>): Promise<void>;
   submitScore?(request: {
@@ -51,6 +62,49 @@ declare global {
 type ToyFailureResult =
   | { readonly status: "unavailable" }
   | { readonly status: "error" };
+
+export interface ToyNavigationRequest {
+  readonly type: ToyNavigationType;
+  readonly id: string;
+}
+
+export type ToyNavigationResult =
+  | { readonly status: "ok" }
+  | ToyFailureResult;
+
+export interface ToyAuthorVideoRequestItem {
+  readonly bvid: string;
+}
+
+export interface ToyAuthorVideosRequest {
+  readonly videos: readonly ToyAuthorVideoRequestItem[];
+}
+
+export interface ToyAuthorVideo {
+  readonly aid: number;
+  readonly bvid: string;
+  readonly title: string;
+  readonly cover: string;
+}
+
+export type ToyAuthorVideosReadResult =
+  | { readonly status: "ok"; readonly items: readonly ToyAuthorVideo[] }
+  | ToyFailureResult;
+
+export interface ToyVideoUserActionsRequest {
+  readonly aids: readonly number[];
+}
+
+export interface ToyVideoUserActions {
+  readonly aid: number;
+  readonly liked: boolean;
+  readonly coinCount: number;
+  readonly favorited: boolean;
+}
+
+export type ToyVideoUserActionsReadResult =
+  | { readonly status: "ok"; readonly items: readonly ToyVideoUserActions[] }
+  | ToyFailureResult;
 
 export type ToyCloudStorageReadResult =
   | { readonly status: "ok"; readonly items: Record<string, string> }
@@ -90,6 +144,8 @@ export type ToyMyRankReadResult =
   | ToyFailureResult;
 
 let sdkLoadPromise: Promise<ToySdk | null> | null = null;
+let navigationSdk: ToySdk | null = null;
+let navigationPreparePromise: Promise<boolean> | null = null;
 
 const isToySdk = (value: unknown): value is ToySdk =>
   Boolean(
@@ -176,6 +232,195 @@ const parseRankItem = (value: unknown): ToyRankItem | null => {
     nickname: typeof candidate.nickname === "string" ? candidate.nickname : "",
     avatar: typeof candidate.avatar === "string" ? candidate.avatar : "",
   };
+};
+
+const parseAuthorVideo = (
+  value: unknown,
+  requestedBvids: ReadonlySet<string>,
+): ToyAuthorVideo | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as {
+    status?: unknown;
+    ref?: { bvid?: unknown };
+    data?: {
+      aid?: unknown;
+      bvid?: unknown;
+      title?: unknown;
+      cover?: unknown;
+    };
+  };
+  if (candidate.status !== "ok" || !candidate.data) return null;
+
+  const referenceBvid = candidate.ref?.bvid;
+  const { aid, bvid, title, cover } = candidate.data;
+  if (
+    typeof referenceBvid !== "string" ||
+    typeof bvid !== "string" ||
+    referenceBvid !== bvid ||
+    !requestedBvids.has(bvid) ||
+    typeof aid !== "number" ||
+    !Number.isSafeInteger(aid) ||
+    aid <= 0 ||
+    typeof title !== "string" ||
+    !title.trim() ||
+    typeof cover !== "string" ||
+    !cover.trim()
+  ) {
+    return null;
+  }
+
+  return {
+    aid,
+    bvid,
+    title: title.trim(),
+    cover: cover.trim(),
+  };
+};
+
+const parseVideoUserActions = (
+  value: unknown,
+  requestedAids: ReadonlySet<number>,
+): ToyVideoUserActions | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as {
+    aid?: unknown;
+    status?: unknown;
+    liked?: unknown;
+    coinCount?: unknown;
+    favorited?: unknown;
+  };
+  const aid = readInteger(candidate.aid, 1, Number.MAX_SAFE_INTEGER);
+  const coinCount = readInteger(candidate.coinCount, 0, Number.MAX_SAFE_INTEGER);
+  if (
+    candidate.status !== "ok" ||
+    aid === null ||
+    !requestedAids.has(aid) ||
+    typeof candidate.liked !== "boolean" ||
+    coinCount === null ||
+    typeof candidate.favorited !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    aid,
+    liked: candidate.liked,
+    coinCount,
+    favorited: candidate.favorited,
+  };
+};
+
+export const prepareToyNavigation = (): Promise<boolean> => {
+  if (navigationPreparePromise) return navigationPreparePromise;
+
+  navigationPreparePromise = getSupportedToySdk("navigate").then((sdk) => {
+    navigationSdk =
+      sdk && typeof sdk.navigate === "function" ? sdk : null;
+    return navigationSdk !== null;
+  });
+  return navigationPreparePromise;
+};
+
+export const navigateToy = (
+  request: ToyNavigationRequest,
+): Promise<ToyNavigationResult> => {
+  const sdk = navigationSdk;
+  if (!sdk || typeof sdk.navigate !== "function") {
+    return Promise.resolve({ status: "unavailable" });
+  }
+
+  try {
+    const navigation = sdk.navigate(request);
+    return navigation.then(
+      () => ({ status: "ok" as const }),
+      (error) => {
+        console.warn("[ToySDK] 页面跳转失败。", error);
+        return { status: "error" as const };
+      },
+    );
+  } catch (error) {
+    console.warn("[ToySDK] 页面跳转失败。", error);
+    return Promise.resolve({ status: "error" });
+  }
+};
+
+export const readToyAuthorVideos = async (
+  request: ToyAuthorVideosRequest,
+): Promise<ToyAuthorVideosReadResult> => {
+  const sdk = await getSupportedToySdk("getAuthorVideos");
+  if (!sdk || typeof sdk.getAuthorVideos !== "function") {
+    return { status: "unavailable" };
+  }
+
+  const requestedBvids = new Set(
+    request.videos.map(({ bvid }) => bvid.trim()).filter(Boolean),
+  );
+  if (requestedBvids.size === 0) return { status: "error" };
+
+  try {
+    const response = await sdk.getAuthorVideos({
+      videos: Array.from(requestedBvids, (bvid) => ({ bvid })),
+    });
+    if (!response || typeof response !== "object") return { status: "error" };
+    const candidate = response as { status?: unknown; items?: unknown };
+    if (candidate.status !== "ok" || !Array.isArray(candidate.items)) {
+      return { status: "error" };
+    }
+
+    return {
+      status: "ok",
+      items: candidate.items
+        .map((item) => parseAuthorVideo(item, requestedBvids))
+        .filter((item): item is ToyAuthorVideo => item !== null),
+    };
+  } catch (error) {
+    console.warn("[ToySDK] 作者视频读取失败，继续使用本地展示内容。", error);
+    return { status: "error" };
+  }
+};
+
+export const readToyVideoUserActions = async (
+  request: ToyVideoUserActionsRequest,
+): Promise<ToyVideoUserActionsReadResult> => {
+  if (
+    request.aids.length === 0 ||
+    request.aids.length > 50 ||
+    request.aids.some((aid) => !Number.isSafeInteger(aid) || aid <= 0)
+  ) {
+    return { status: "error" };
+  }
+  const requestedAids = new Set(request.aids);
+
+  const sdk = await getSupportedToySdk("getVideoUserActions");
+  if (!sdk || typeof sdk.getVideoUserActions !== "function") {
+    return { status: "unavailable" };
+  }
+
+  try {
+    const response = await sdk.getVideoUserActions({
+      aids: Array.from(requestedAids),
+    });
+    if (!response || typeof response !== "object") return { status: "error" };
+    const candidate = response as { items?: unknown };
+    if (!Array.isArray(candidate.items)) return { status: "error" };
+
+    const parsedItems = candidate.items.map((item) =>
+      parseVideoUserActions(item, requestedAids),
+    );
+    if (parsedItems.some((item) => item === null)) return { status: "error" };
+    const items = parsedItems as ToyVideoUserActions[];
+    if (
+      items.length !== requestedAids.size ||
+      new Set(items.map(({ aid }) => aid)).size !== requestedAids.size
+    ) {
+      return { status: "error" };
+    }
+
+    return { status: "ok", items };
+  } catch (error) {
+    console.warn("[ToySDK] 视频互动状态读取失败。", error);
+    return { status: "error" };
+  }
 };
 
 export const readToyCloudStorage = async (

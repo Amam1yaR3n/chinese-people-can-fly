@@ -100,7 +100,8 @@ canvas {
 
 .hud-icon-button,
 .settings-close,
-.leaderboard-close {
+.leaderboard-close,
+.audio-close {
   display: grid;
   place-items: center;
   border: max(2px, 0.16vw) solid #142033;
@@ -167,6 +168,12 @@ canvas {
   stroke-width: 1.9;
 }
 
+.audio-button svg .speaker-wave {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2.2;
+}
+
 .settings-wrap {
   position: relative;
   display: grid;
@@ -213,15 +220,20 @@ canvas {
 .hud-icon-button:focus-visible,
 .settings-close:focus-visible,
 .leaderboard-close:focus-visible,
+.audio-close:focus-visible,
 .leaderboard-retry:focus-visible,
+.launcher-access-retry:focus-visible,
 .volume-control input:focus-visible,
+.promo-action:focus-visible,
+.featured-video-cover:focus-visible,
 .launcher-card:focus-visible {
   outline: max(3px, 0.22vw) solid #fffdf5;
   outline-offset: max(3px, 0.2vw);
 }
 
 .settings-overlay,
-.leaderboard-overlay {
+.leaderboard-overlay,
+.audio-overlay {
   position: absolute;
   inset: 0;
   z-index: 10;
@@ -232,12 +244,13 @@ canvas {
 }
 
 .settings-overlay:not([hidden]),
-.leaderboard-overlay:not([hidden]) {
+.leaderboard-overlay:not([hidden]),
+.audio-overlay:not([hidden]) {
   display: grid;
 }
 
 .leaderboard-overlay {
-  z-index: 12;
+  z-index: 10;
 }
 
 .leaderboard-panel {
@@ -517,7 +530,8 @@ canvas {
   text-align: center;
 }
 
-.settings-close {
+.settings-close,
+.audio-close {
   position: absolute;
   top: clamp(-14px, -1vw, -9px);
   right: clamp(-14px, -1vw, -9px);
@@ -532,23 +546,35 @@ canvas {
   line-height: 1;
 }
 
-.settings-close:hover {
+.settings-close:hover,
+.audio-close:hover {
   background: #ffbd3f;
 }
 
-.settings-audio {
+.audio-panel {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: 100%;
+  padding: clamp(24px, 3.5vw, 44px) clamp(24px, 4vw, 52px);
+  border: max(3px, 0.3vw) solid #142033;
+  border-radius: clamp(18px, 2.4vw, 34px);
+  background: #fffdf5;
+  box-shadow: 0 clamp(7px, 0.8vw, 13px) 0 #142033;
+  color: #142033;
+}
+
+.audio-controls {
   display: flex;
   min-width: 0;
   flex-direction: column;
   justify-content: center;
-  padding-right: clamp(18px, 2.5vw, 40px);
-  border-right: max(2px, 0.16vw) solid #dce8eb;
 }
 
-.settings-audio h2 {
+.audio-controls h2 {
   margin: 0;
   font-size: clamp(22px, 2.8vw, 44px);
   line-height: 1.1;
+  text-align: center;
 }
 
 .volume-control {
@@ -631,10 +657,190 @@ canvas {
   box-shadow: 0 0.1em 0 #142033;
 }
 
+.creator-promo {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: repeat(5, auto);
+  align-content: center;
+  gap: clamp(4px, 0.5vw, 7px);
+  padding-right: clamp(18px, 2.5vw, 40px);
+  border-right: max(2px, 0.16vw) solid #dce8eb;
+  text-align: left;
+}
+
+.promo-section-label {
+  margin: 0;
+  color: #657683;
+  font-size: clamp(11px, 1vw, 15px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+}
+
+.account-card + .promo-section-label {
+  margin-top: clamp(3px, 0.4vw, 6px);
+}
+
+.account-card,
+.video-card {
+  min-width: 0;
+  border: max(2px, 0.16vw) solid #cbd8de;
+  border-radius: clamp(12px, 1.4vw, 20px);
+  background: #fff;
+}
+
+.account-card {
+  display: grid;
+  padding: clamp(8px, 0.9vw, 13px);
+}
+
+.account-summary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(7px, 0.8vw, 12px);
+}
+
+.account-avatar {
+  display: block;
+  width: clamp(42px, 4.6vw, 68px);
+  aspect-ratio: 1;
+  border: max(2px, 0.16vw) solid #142033;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.account-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: clamp(14px, 1.45vw, 21px);
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promo-action {
+  padding: 0.48em 0.88em 0.54em;
+  border: max(2px, 0.14vw) solid #142033;
+  border-radius: 999px;
+  background: #ffd84d;
+  box-shadow: 0 0.1em 0 #142033;
+  color: #142033;
+  cursor: pointer;
+  font: inherit;
+  font-size: clamp(11px, 1vw, 15px);
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.promo-action:hover {
+  background: #ffbd3f;
+}
+
+.promo-action:active {
+  translate: 0 0.07em;
+  box-shadow: 0 0.02em 0 #142033;
+}
+
+.video-card {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: repeat(2, auto);
+  align-content: center;
+  gap: clamp(5px, 0.6vw, 9px);
+  padding: clamp(8px, 0.9vw, 13px);
+}
+
+.video-card h2 {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: clamp(12px, 1.18vw, 17px);
+  font-weight: 900;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.featured-video-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  overflow: hidden;
+  border: max(2px, 0.16vw) solid #142033;
+  border-radius: clamp(9px, 1vw, 15px);
+  background: #142033;
+  box-shadow: 0 0.1em 0 #142033;
+  cursor: pointer;
+}
+
+.featured-video-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 160ms ease;
+}
+
+.featured-video-cover:hover img {
+  transform: scale(1.025);
+}
+
+.video-play-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  width: clamp(38px, 4vw, 56px);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  filter: drop-shadow(0 0.12em 0 rgb(20 32 51 / 78%));
+  pointer-events: none;
+}
+
+.video-play-icon svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.video-play-icon circle {
+  fill: rgb(255 216 77 / 94%);
+  stroke: #142033;
+  stroke-width: 3;
+}
+
+.video-play-icon path {
+  fill: #142033;
+  stroke: none;
+}
+
+.promotion-status {
+  min-height: 1.2em;
+  margin: 0;
+  color: #9d4e29;
+  font-size: clamp(10px, 0.95vw, 14px);
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.promotion-status[hidden] {
+  visibility: hidden;
+}
+
 .launcher-picker {
   display: grid;
   min-width: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   align-items: stretch;
   gap: clamp(10px, 1.2vw, 18px);
 }
@@ -719,6 +925,38 @@ canvas {
   line-height: 1.15;
 }
 
+.launcher-access-status {
+  display: flex;
+  min-height: 1.8em;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, 0.7vw, 10px);
+  color: #9d4e29;
+  font-size: clamp(10px, 0.95vw, 14px);
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.launcher-access-status[hidden],
+.launcher-access-retry[hidden] {
+  display: none;
+}
+
+.launcher-access-retry {
+  flex: 0 0 auto;
+  padding: 0.34em 0.7em 0.4em;
+  border: max(2px, 0.13vw) solid #142033;
+  border-radius: 999px;
+  background: #ffd84d;
+  box-shadow: 0 0.12em 0 #142033;
+  color: #142033;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .best-distance {
   margin: 0;
   color: #142033;
@@ -733,7 +971,8 @@ canvas {
 
 @media (max-height: 520px) {
   .settings-overlay,
-  .leaderboard-overlay {
+  .leaderboard-overlay,
+  .audio-overlay {
     padding: 12px 20px;
   }
 
@@ -742,7 +981,9 @@ canvas {
     padding: 12px 24px;
   }
 
-  .leaderboard-close {
+  .leaderboard-close,
+  .settings-close,
+  .audio-close {
     top: 4px;
     right: 4px;
   }
@@ -770,12 +1011,57 @@ canvas {
     padding: 14px 24px;
   }
 
-  .settings-audio {
+  .audio-panel {
+    padding: 18px 30px;
+  }
+
+  .audio-controls h2 {
+    font-size: clamp(20px, 2.6vw, 30px);
+  }
+
+  .creator-promo {
+    gap: 6px;
     padding-right: clamp(14px, 2vw, 24px);
   }
 
-  .settings-audio h2 {
-    font-size: clamp(20px, 2.6vw, 30px);
+  .account-card,
+  .video-card {
+    padding: 6px 8px;
+  }
+
+  .account-card,
+  .video-card {
+    gap: 4px;
+  }
+
+  .account-avatar {
+    width: 34px;
+  }
+
+  .account-summary {
+    gap: 5px;
+  }
+
+  .account-name {
+    font-size: 11px;
+  }
+
+  .promo-action {
+    padding: 0.4em 0.58em 0.46em;
+    font-size: 10px;
+  }
+
+  .video-card h2 {
+    font-size: clamp(10px, 1.35vw, 13px);
+    -webkit-line-clamp: 1;
+  }
+
+  .video-play-icon {
+    width: clamp(32px, 3.8vw, 42px);
+  }
+
+  .promotion-status {
+    min-height: 1em;
   }
 
   .volume-control {

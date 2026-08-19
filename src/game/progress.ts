@@ -1,8 +1,6 @@
 import {
   DEFAULT_LAUNCHER_ID,
-  getLauncherDefinition,
   isLauncherId,
-  isLauncherSelectable,
   type LauncherId,
 } from "./launchers";
 
@@ -37,18 +35,11 @@ export const sanitizeProgress = (value: unknown): ProgressV1 => {
   const requestedLauncher = isLauncherId(candidate.selectedLauncher)
     ? candidate.selectedLauncher
     : DEFAULT_LAUNCHER_ID;
-  const selectedDefinition = getLauncherDefinition(requestedLauncher);
-  const selectedLauncher = isLauncherSelectable(
-    selectedDefinition,
-    bestDistance,
-  )
-    ? requestedLauncher
-    : DEFAULT_LAUNCHER_ID;
 
   return {
     version: 1,
     bestDistance,
-    selectedLauncher,
+    selectedLauncher: requestedLauncher,
   };
 };
 

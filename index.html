@@ -37,6 +37,20 @@
               <path class="podium-number" d="M14.9 10.2v6.9M12.9 11.8l2-1.6" />
             </svg>
           </button>
+          <button
+            id="audio-button"
+            class="hud-icon-button audio-button"
+            type="button"
+            aria-label="打开声音设置"
+            aria-controls="audio-dialog"
+            aria-expanded="false"
+          >
+            <svg viewBox="0 0 28 28" aria-hidden="true">
+              <path class="speaker-body" d="M3.2 10.7h5.2l6.4-5v16.6l-6.4-5H3.2z" />
+              <path class="speaker-wave" d="M18.1 10.4a5.2 5.2 0 0 1 0 7.2" />
+              <path class="speaker-wave" d="M21.1 7.2a9.6 9.6 0 0 1 0 13.6" />
+            </svg>
+          </button>
           <span class="settings-wrap">
             <button
               id="settings-button"
@@ -189,25 +203,25 @@
       </section>
 
       <section
-        id="settings-dialog"
-        class="settings-overlay"
+        id="audio-dialog"
+        class="audio-overlay"
         role="dialog"
         aria-modal="true"
-        aria-label="游戏设置"
+        aria-labelledby="audio-dialog-title"
         hidden
       >
-        <div class="settings-panel">
+        <div class="audio-panel">
           <button
-            id="settings-close"
-            class="settings-close"
+            id="audio-close"
+            class="audio-close"
             type="button"
-            aria-label="关闭游戏设置"
+            aria-label="关闭声音设置"
           >
             ×
           </button>
 
-          <section class="settings-audio" aria-labelledby="settings-audio-title">
-            <h2 id="settings-audio-title">声音设置</h2>
+          <section class="audio-controls" aria-labelledby="audio-dialog-title">
+            <h2 id="audio-dialog-title">声音设置</h2>
 
             <label class="volume-control" for="music-volume">
               <span>音乐音量</span>
@@ -235,9 +249,105 @@
               />
             </label>
           </section>
+        </div>
+      </section>
 
-          <section class="launcher-picker" aria-label="击球手设置">
+      <section
+        id="settings-dialog"
+        class="settings-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="游戏设置"
+        hidden
+      >
+        <div class="settings-panel">
+          <button
+            id="settings-close"
+            class="settings-close"
+            type="button"
+            aria-label="关闭游戏设置"
+          >
+            ×
+          </button>
+
+          <section class="creator-promo" aria-label="账号信息和推荐视频">
+            <h2 class="promo-section-label">作者</h2>
+            <article class="account-card">
+              <div class="account-summary">
+                <img
+                  class="account-avatar"
+                  src="./assets/ui/author-avatar.jpg"
+                  alt="火山哥哥头像"
+                  draggable="false"
+                />
+                <strong class="account-name">火山哥哥</strong>
+                <button
+                  id="author-home-button"
+                  class="promo-action"
+                  type="button"
+                >
+                  进入主页
+                </button>
+              </div>
+            </article>
+
+            <h2 class="promo-section-label">开发视频</h2>
+            <article class="video-card">
+              <h2 id="featured-video-title">
+                我把大狗叫做成了游戏！（点击即玩）【B站AI创造公开赛】
+              </h2>
+              <button
+                id="featured-video-button"
+                class="featured-video-cover"
+                type="button"
+                aria-label="播放：我把大狗叫做成了游戏！（点击即玩）【B站AI创造公开赛】"
+              >
+                <img
+                  id="featured-video-image"
+                  src="./assets/ui/featured-video-cover.jpg"
+                  data-fallback-src="./assets/ui/featured-video-cover.jpg"
+                  alt=""
+                  draggable="false"
+                />
+                <span class="video-play-icon" aria-hidden="true">
+                  <svg viewBox="0 0 56 56">
+                    <circle cx="28" cy="28" r="25" />
+                    <path d="M23 17.5 40 28 23 38.5z" />
+                  </svg>
+                </span>
+              </button>
+            </article>
+
+            <p
+              id="promotion-status"
+              class="promotion-status"
+              role="status"
+              aria-live="polite"
+              hidden
+            ></p>
+          </section>
+
+          <section class="launcher-picker" aria-label="发射装置设置">
             <div id="launcher-grid" class="launcher-grid"></div>
+            <div
+              id="launcher-access-status"
+              class="launcher-access-status"
+              role="status"
+              aria-live="polite"
+            >
+              <span id="launcher-access-status-text"
+                >正在核验视频互动状态…</span
+              >
+              <button
+                id="launcher-access-retry"
+                class="launcher-access-retry"
+                type="button"
+                hidden
+                disabled
+              >
+                刷新解锁状态
+              </button>
+            </div>
             <p class="best-distance">
               历史最远飞行距离：<output id="best-distance">0米</output>
             </p>
