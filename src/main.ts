@@ -1022,6 +1022,19 @@ const maybeShowLandscapeTip = (): void => {
   setLandscapeTipOpen(true);
 };
 
+const dismissLandscapeTip = (event?: Event): void => {
+  if (event) {
+    event.preventDefault();
+    // The same tap must not fall through to the canvas and immediately start a
+    // round. This is especially important on iOS, where pointer/touch events
+    // are processed before the synthesized click that normally dismisses the
+    // landscape hint.
+    event.stopPropagation();
+  }
+  if (!landscapeTipOpen) return;
+  setLandscapeTipOpen(false);
+};
+
 const progressMatches = (
   first: ProgressV1,
   second: ProgressV1,
@@ -1493,10 +1506,22 @@ tutorialClose.addEventListener("click", () => {
   setTutorialOpen(false);
 });
 
+// iOS Safari/WKWebView can stop synthesizing `click` for a non-interactive
+// overlay, especially while the hint arrow has a continuously running CSS
+// animation. Dismiss from pointer/touch down instead, with click retained as a
+// desktop/keyboard fallback.
+landscapeTip.addEventListener("pointerdown", (event) => {
+  dismissLandscapeTip(event);
+});
+landscapeTip.addEventListener(
+  "touchstart",
+  (event) => {
+    dismissLandscapeTip(event);
+  },
+  { passive: false },
+);
 landscapeTip.addEventListener("click", (event) => {
-  if (!landscapeTipOpen) return;
-  event.preventDefault();
-  setLandscapeTipOpen(false);
+  dismissLandscapeTip(event);
 });
 
 musicVolumeInput.addEventListener("input", () => {
