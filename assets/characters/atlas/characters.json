@@ -308,7 +308,7 @@
     }
   },
   "meta": {
-    "app": "tools/organize_character_art.py",
+    "app": "runtime-atlas",
     "image": "characters.png",
     "format": "RGBA8888",
     "size": {

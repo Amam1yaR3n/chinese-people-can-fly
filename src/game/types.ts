@@ -84,7 +84,6 @@ export interface ExplosionState {
 export interface GameSnapshot {
   phase: GamePhase;
   distance: number;
-  score: number;
   ended: boolean;
   launcherId: LauncherId;
 }

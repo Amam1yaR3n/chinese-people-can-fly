@@ -8,12 +8,12 @@ export type LauncherUnlockRequirement =
   | "always"
   | "liked"
   | "coined"
-  | "favorited";
+  | "following";
 
 export interface LauncherUnlockState {
   readonly liked: boolean;
   readonly coinCount: number;
-  readonly favorited: boolean;
+  readonly isFollowing: boolean;
 }
 
 export interface LauncherDefinition {
@@ -55,8 +55,8 @@ export const LAUNCHERS: readonly LauncherDefinition[] = [
   {
     id: "missileTruck",
     name: "东风快递发射车",
-    unlockRequirement: "favorited",
-    unlockHint: "收藏视频解锁",
+    unlockRequirement: "following",
+    unlockHint: "关注火山哥哥解锁",
     iconPath: "./assets/characters/launchers/missile-truck.png",
     implemented: true,
   },
@@ -85,8 +85,8 @@ export const isLauncherUnlocked = (
       return unlockState?.liked === true;
     case "coined":
       return (unlockState?.coinCount ?? 0) > 0;
-    case "favorited":
-      return unlockState?.favorited === true;
+    case "following":
+      return unlockState?.isFollowing === true;
   }
 };
 

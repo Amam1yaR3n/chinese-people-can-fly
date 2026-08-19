@@ -260,7 +260,9 @@ canvas {
   gap: clamp(10px, 1.35vw, 20px);
   width: min(820px, 100%);
   height: min(720px, 100%);
+  min-height: 0;
   max-height: 100%;
+  overflow: hidden;
   padding: clamp(18px, 2.6vw, 36px) clamp(18px, 3vw, 44px);
   border: max(3px, 0.3vw) solid #142033;
   border-radius: clamp(18px, 2.4vw, 34px);
@@ -394,6 +396,8 @@ canvas {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   list-style: none;
   scrollbar-color: #8fa4ae transparent;
   scrollbar-width: thin;
@@ -477,7 +481,7 @@ canvas {
   white-space: nowrap;
 }
 
-.rank-score {
+.rank-distance {
   color: #d16a35;
   text-align: right;
   white-space: nowrap;
@@ -969,7 +973,7 @@ canvas {
   color: #d16a35;
 }
 
-@media (max-height: 520px) {
+@media (max-height: 520px), (max-width: 600px) {
   .settings-overlay,
   .leaderboard-overlay,
   .audio-overlay {
@@ -990,6 +994,26 @@ canvas {
 
   .leaderboard-heading h2 {
     font-size: clamp(21px, 2.7vw, 30px);
+  }
+
+  .leaderboard-status {
+    min-height: 0;
+    gap: 3px;
+    padding: 4px 10px;
+  }
+
+  .leaderboard-status strong {
+    font-size: 15px;
+  }
+
+  .leaderboard-status span {
+    font-size: 10px;
+  }
+
+  .leaderboard-retry {
+    margin-top: 0;
+    padding-block: 0.35em 0.4em;
+    font-size: 11px;
   }
 
   .rank-row {
@@ -1204,12 +1228,6 @@ canvas {
   margin-top: 0.12em;
   font-size: clamp(30px, 5.5vw, 86px);
   line-height: 1;
-}
-
-.result small {
-  margin-top: 0.7em;
-  font-size: clamp(12px, 1.4vw, 22px);
-  font-weight: 800;
 }
 
 .result-message {

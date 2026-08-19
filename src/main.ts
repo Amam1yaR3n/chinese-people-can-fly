@@ -16,8 +16,10 @@ import {
   type LauncherUnlockState,
 } from "./game/launchers";
 import {
-  createLeaderboardScoreQueue,
+  createLeaderboardDistanceQueue,
   loadLeaderboard,
+  type LeaderboardMyRankReadResult,
+  type LeaderboardRankItem,
 } from "./game/leaderboard";
 import {
   loadProgress,
@@ -25,6 +27,7 @@ import {
   saveProgress,
   type ProgressV1,
 } from "./game/progress";
+import { formatResultMessage } from "./game/result-message";
 import {
   loadBackgroundSprites,
   loadCharacterSprites,
@@ -37,11 +40,12 @@ import type { GamePhase, Vec2 } from "./game/types";
 import {
   navigateToy,
   prepareToyNavigation,
+  readToyAuthorRelation,
   readToyAuthorVideos,
   readToyVideoUserActions,
-  type ToyMyRankReadResult,
+  type ToyAuthorRelationFailureReason,
   type ToyNavigationRequest,
-  type ToyRankItem,
+  type ToyVideoUserActionsFailureReason,
 } from "./platform/toy-sdk";
 
 interface VolumeSettings {
@@ -50,10 +54,9 @@ interface VolumeSettings {
 }
 
 type LauncherAccessStatus = "loading" | "ready" | "unavailable" | "error";
-
-type FeaturedVideoLoadResult =
-  | { readonly status: "ok"; readonly aid: number }
-  | { readonly status: "unavailable" | "error" };
+type LauncherAccessFailureReason =
+  | ToyAuthorRelationFailureReason
+  | ToyVideoUserActionsFailureReason;
 
 const VOLUME_STORAGE_KEY = "chinese-people-can-fly:volume-settings";
 const TUTORIAL_STORAGE_KEY = "chinese-people-can-fly:tutorial-shown";
@@ -61,6 +64,7 @@ const UNLOCK_NOTICE_STORAGE_KEY =
   "chinese-people-can-fly:interaction-unlock-notice-v1";
 const AUTHOR_ID = "137429365";
 const FEATURED_VIDEO_BVID = "BV1VBbk6EEJP";
+const FEATURED_VIDEO_AID = 117_098_575_566_525;
 const NAVIGATION_STATUS_DURATION_MS = 3_000;
 const DEFAULT_VOLUME_SETTINGS: VolumeSettings = {
   music: 48,
@@ -139,7 +143,6 @@ const saveUnlockNoticePending = (pending: boolean): void => {
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 const distanceOutput = document.querySelector<HTMLOutputElement>("#distance");
-const scoreOutput = document.querySelector<HTMLOutputElement>("#score");
 const leaderboardButton = document.querySelector<HTMLButtonElement>(
   "#leaderboard-button",
 );
@@ -176,11 +179,10 @@ const leaderboardList = document.querySelector<HTMLOListElement>(
 const myRankPosition = document.querySelector<HTMLElement>(
   "#my-rank-position",
 );
-const myRankScore = document.querySelector<HTMLOutputElement>(
-  "#my-rank-score",
+const myRankDistance = document.querySelector<HTMLOutputElement>(
+  "#my-rank-distance",
 );
 const resultPanel = document.querySelector<HTMLElement>("#result");
-const resultScore = document.querySelector<HTMLElement>("#result-score");
 const resultDistance = document.querySelector<HTMLElement>("#result-distance");
 const resultMessage = document.querySelector<HTMLElement>("#result-message");
 const portraitOverlay = document.querySelector<HTMLElement>("#portrait-overlay");
@@ -240,7 +242,6 @@ const effectsVolumeOutput = document.querySelector<HTMLOutputElement>(
 if (
   !canvas ||
   !distanceOutput ||
-  !scoreOutput ||
   !leaderboardButton ||
   !audioButton ||
   !audioDialog ||
@@ -255,9 +256,8 @@ if (
   !leaderboardTable ||
   !leaderboardList ||
   !myRankPosition ||
-  !myRankScore ||
+  !myRankDistance ||
   !resultPanel ||
-  !resultScore ||
   !resultDistance ||
   !resultMessage ||
   !portraitOverlay ||
@@ -296,7 +296,8 @@ const audio = new AudioController(
   volumeSettings.music / 100,
   volumeSettings.effects / 100,
 );
-const leaderboardScoreQueue = createLeaderboardScoreQueue();
+const leaderboardDistanceQueue = createLeaderboardDistanceQueue();
+leaderboardDistanceQueue.enqueue(progress.bestDistance);
 let game: Game | null = null;
 let accumulator = 0;
 let lastTimestamp = performance.now();
@@ -314,12 +315,12 @@ let pendingGameLauncher: LauncherId | null = null;
 let roundHasInteraction = false;
 let leaderboardRequestId = 0;
 let promotionStatusTimer: number | null = null;
-let currentVideoAid: number | null = null;
-let featuredVideoLoadPromise: Promise<FeaturedVideoLoadResult> | null = null;
+let featuredVideoMetadataPromise: Promise<void> | null = null;
 let launcherAccessRefreshPromise: Promise<void> | null = null;
 let launcherUnlockState: LauncherUnlockState | null = null;
 let lastConfirmedUnlockState: LauncherUnlockState | null = null;
 let launcherAccessState: LauncherAccessStatus = "loading";
+let launcherAccessFailureReason: LauncherAccessFailureReason | null = null;
 
 const updateAudioPause = (): void => {
   audio.setPaused(
@@ -429,16 +430,24 @@ const renderLauncherAccessStatus = (): void => {
 
   launcherAccessStatus.hidden = false;
   if (launcherAccessState === "loading") {
-    launcherAccessStatusText.textContent = "正在核验视频互动状态…";
+    launcherAccessStatusText.textContent = "正在核验视频互动与关注状态…";
     launcherAccessRetry.hidden = true;
     launcherAccessRetry.disabled = true;
     return;
   }
 
-  launcherAccessStatusText.textContent =
-    launcherAccessState === "unavailable"
-      ? "当前环境无法核验，请在已登录的 B站内打开"
-      : "无法核验互动状态，请登录 B站或检查网络后重试";
+  if (launcherAccessState === "unavailable") {
+    launcherAccessStatusText.textContent = "当前环境不支持互动核验，请在 B站 App 或网页内打开";
+  } else if (launcherAccessFailureReason === "not_logged_in") {
+    launcherAccessStatusText.textContent = "请先登录 B站，再刷新互动状态";
+  } else if (launcherAccessFailureReason === "video_unavailable") {
+    launcherAccessStatusText.textContent =
+      "该视频不属于当前 Toy 发布者；请使用火山哥哥账号发布此 Toy";
+  } else if (launcherAccessFailureReason === "unexpected_response") {
+    launcherAccessStatusText.textContent = "互动状态返回异常，请更新发布包后重试";
+  } else {
+    launcherAccessStatusText.textContent = "互动状态请求失败，请检查网络后重试";
+  }
   launcherAccessRetry.hidden = false;
   launcherAccessRetry.disabled = false;
 };
@@ -532,8 +541,8 @@ const previewMusic = async (): Promise<void> => {
   }, 700);
 };
 
-const formatRankScore = (score: number): string =>
-  `${score.toLocaleString("zh-CN")} 分`;
+const formatRankDistance = (distance: number): string =>
+  `${distance.toLocaleString("zh-CN")} 米`;
 
 const normalizeRemoteUrl = (value: string): string | null => {
   const candidate = value.trim();
@@ -593,34 +602,35 @@ const requestPromotionNavigation = (request: ToyNavigationRequest): void => {
   });
 };
 
-const loadFeaturedVideo = (): Promise<FeaturedVideoLoadResult> => {
-  if (currentVideoAid !== null) {
-    return Promise.resolve({ status: "ok", aid: currentVideoAid });
-  }
-  if (featuredVideoLoadPromise) return featuredVideoLoadPromise;
+const refreshFeaturedVideoMetadata = (): Promise<void> => {
+  if (featuredVideoMetadataPromise) return featuredVideoMetadataPromise;
 
-  const request = (async (): Promise<FeaturedVideoLoadResult> => {
+  const request = (async (): Promise<void> => {
     const result = await readToyAuthorVideos({
       videos: [{ bvid: FEATURED_VIDEO_BVID }],
     });
-    if (result.status !== "ok") return result;
+    if (result.status !== "ok") return;
 
     const video = result.items.find(
       ({ bvid }) => bvid === FEATURED_VIDEO_BVID,
     );
-    if (!video) return { status: "error" };
+    if (!video) return;
+    if (video.aid !== FEATURED_VIDEO_AID) {
+      console.warn("[ToySDK] 推荐视频的 BV 与 AID 不匹配，已保留本地配置。", video);
+      return;
+    }
 
-    currentVideoAid = video.aid;
     featuredVideoTitle.textContent = video.title;
     featuredVideoButton.setAttribute("aria-label", `播放：${video.title}`);
     const coverUrl = normalizeRemoteUrl(video.cover);
     if (coverUrl) featuredVideoImage.src = coverUrl;
-    return { status: "ok", aid: video.aid };
   })();
 
-  featuredVideoLoadPromise = request;
+  featuredVideoMetadataPromise = request;
   void request.then(() => {
-    if (featuredVideoLoadPromise === request) featuredVideoLoadPromise = null;
+    if (featuredVideoMetadataPromise === request) {
+      featuredVideoMetadataPromise = null;
+    }
   });
   return request;
 };
@@ -640,22 +650,29 @@ const refreshLauncherAccess = (): Promise<void> => {
   if (launcherAccessRefreshPromise) return launcherAccessRefreshPromise;
 
   launcherAccessState = "loading";
+  launcherAccessFailureReason = null;
   renderLauncherGrid();
   const request = (async (): Promise<void> => {
-    const videoResult = await loadFeaturedVideo();
-    if (videoResult.status !== "ok") {
-      launcherAccessState = videoResult.status;
+    void refreshFeaturedVideoMetadata();
+
+    const [actionResult, relationResult] = await Promise.all([
+      readToyVideoUserActions({ aids: [FEATURED_VIDEO_AID] }),
+      readToyAuthorRelation(),
+    ]);
+    if (actionResult.status !== "ok") {
+      launcherAccessState = actionResult.status;
+      launcherAccessFailureReason =
+        actionResult.status === "error" ? actionResult.reason : null;
       launcherUnlockState = null;
       reconcileActiveLauncher();
       renderLauncherGrid();
       return;
     }
 
-    const actionResult = await readToyVideoUserActions({
-      aids: [videoResult.aid],
-    });
-    if (actionResult.status !== "ok") {
-      launcherAccessState = actionResult.status;
+    if (relationResult.status !== "ok") {
+      launcherAccessState = relationResult.status;
+      launcherAccessFailureReason =
+        relationResult.status === "error" ? relationResult.reason : null;
       launcherUnlockState = null;
       reconcileActiveLauncher();
       renderLauncherGrid();
@@ -663,10 +680,11 @@ const refreshLauncherAccess = (): Promise<void> => {
     }
 
     const actions = actionResult.items.find(
-      ({ aid }) => aid === videoResult.aid,
+      ({ aid }) => aid === FEATURED_VIDEO_AID,
     );
     if (!actions) {
       launcherAccessState = "error";
+      launcherAccessFailureReason = "video_unavailable";
       launcherUnlockState = null;
       reconcileActiveLauncher();
       renderLauncherGrid();
@@ -676,7 +694,7 @@ const refreshLauncherAccess = (): Promise<void> => {
     const nextUnlockState: LauncherUnlockState = {
       liked: actions.liked,
       coinCount: actions.coinCount,
-      favorited: actions.favorited,
+      isFollowing: relationResult.data.isFollowing,
     };
     if (
       lastConfirmedUnlockState &&
@@ -690,6 +708,7 @@ const refreshLauncherAccess = (): Promise<void> => {
     lastConfirmedUnlockState = nextUnlockState;
     launcherUnlockState = nextUnlockState;
     launcherAccessState = "ready";
+    launcherAccessFailureReason = null;
     reconcileActiveLauncher();
     renderLauncherGrid();
   })();
@@ -703,32 +722,32 @@ const refreshLauncherAccess = (): Promise<void> => {
   return request;
 };
 
-const renderMyRank = (result: ToyMyRankReadResult | null): void => {
+const renderMyRank = (result: LeaderboardMyRankReadResult | null): void => {
   if (!result) {
     myRankPosition.textContent = "加载中…";
-    myRankScore.value = "";
-    myRankScore.textContent = "";
+    myRankDistance.value = "";
+    myRankDistance.textContent = "";
     return;
   }
 
   if (result.status !== "ok") {
     myRankPosition.textContent = "登录后查看我的排名";
-    myRankScore.value = "—";
-    myRankScore.textContent = "—";
+    myRankDistance.value = "—";
+    myRankDistance.textContent = "—";
     return;
   }
 
   if (!result.ranked) {
     myRankPosition.textContent = "未上榜";
-    myRankScore.value = "0 分";
-    myRankScore.textContent = "0 分";
+    myRankDistance.value = "0 米";
+    myRankDistance.textContent = "0 米";
     return;
   }
 
   myRankPosition.textContent = `第 ${result.rank.toLocaleString("zh-CN")} 名`;
-  const score = formatRankScore(result.score);
-  myRankScore.value = score;
-  myRankScore.textContent = score;
+  const distance = formatRankDistance(result.distance);
+  myRankDistance.value = distance;
+  myRankDistance.textContent = distance;
 };
 
 const showLeaderboardStatus = (
@@ -744,8 +763,8 @@ const showLeaderboardStatus = (
 };
 
 const renderLeaderboardList = (
-  items: readonly ToyRankItem[],
-  mine: ToyMyRankReadResult,
+  items: readonly LeaderboardRankItem[],
+  mine: LeaderboardMyRankReadResult,
 ): void => {
   leaderboardList.replaceChildren();
 
@@ -790,10 +809,10 @@ const renderLeaderboardList = (
     name.textContent = nickname;
     player.append(avatar, name);
 
-    const score = document.createElement("span");
-    score.className = "rank-score";
-    score.textContent = formatRankScore(item.score);
-    row.append(rank, player, score);
+    const distance = document.createElement("span");
+    distance.className = "rank-distance";
+    distance.textContent = formatRankDistance(item.distance);
+    row.append(rank, player, distance);
     leaderboardList.append(row);
   }
 
@@ -830,7 +849,7 @@ const refreshLeaderboard = async (): Promise<void> => {
   if (result.list.items.length === 0) {
     showLeaderboardStatus(
       "还没有玩家上榜",
-      "完成一局后，你的最高单局分就有机会出现在这里。",
+      "完成一局后，你的最远飞行距离就有机会出现在这里。",
       false,
     );
     return;
@@ -965,6 +984,7 @@ const syncProgressFromCloud = async (
     result.progress,
     progress !== progressAtSyncStart,
   );
+  leaderboardDistanceQueue.enqueue(mergedProgress.bestDistance);
   const localNeedsUpdate = !progressMatches(progress, mergedProgress);
 
   if (localNeedsUpdate) {
@@ -1037,44 +1057,13 @@ const updateOutput = (
   output.textContent = value;
 };
 
-const RESULT_MESSAGES: readonly {
-  readonly min: number;
-  readonly max: number;
-  readonly options: readonly string[];
-}[] = [
-  {
-    min: 0,
-    max: 2000,
-    options: ["难道中国人不能飞？", "！？区区？！", "飞到八分钱了"],
-  },
-  { min: 2000, max: 5000, options: ["下次可以飞得更远！"] },
-  {
-    min: 5000,
-    max: Number.POSITIVE_INFINITY,
-    options: [
-      "这么强？！",
-      "击败了99.9％的中国人",
-      "击败了100％的美国人",
-      "击败了100％的日本人",
-    ],
-  },
-];
-
-const pickResultMessage = (distance: number): string => {
-  const range =
-    RESULT_MESSAGES.find(
-      (entry) => distance >= entry.min && distance < entry.max,
-    ) ?? RESULT_MESSAGES[RESULT_MESSAGES.length - 1];
-  return range.options[Math.floor(Math.random() * range.options.length)];
-};
-
 const updateHud = (): void => {
   if (!game) return;
   const snapshot = game.getSnapshot();
   const endedChanged = gameEnded !== snapshot.ended;
   if (snapshot.ended && !gameEnded) {
-    resultMessage.textContent = pickResultMessage(snapshot.distance);
-    leaderboardScoreQueue.enqueue(snapshot.score);
+    resultMessage.textContent = formatResultMessage(snapshot.distance);
+    leaderboardDistanceQueue.enqueue(snapshot.distance);
   }
   if (snapshot.ended && !gameEnded) {
     const nextProgress = recordCompletedDistance(progress, snapshot.distance);
@@ -1086,13 +1075,10 @@ const updateHud = (): void => {
   }
   gameEnded = snapshot.ended;
   const formattedDistance = `${snapshot.distance} 米`;
-  const formattedScore = `${snapshot.score} 分`;
   updateOutput(distanceOutput, formattedDistance);
-  updateOutput(scoreOutput, formattedScore);
   resultPanel.hidden = !snapshot.ended;
   if (snapshot.ended) {
-    resultScore.textContent = formattedScore;
-    resultDistance.textContent = `你飞了${snapshot.distance}米`;
+    resultDistance.textContent = formattedDistance;
   }
   document.body.dataset.phase = snapshot.phase;
   if (endedChanged) updateAudioPause();
@@ -1395,4 +1381,12 @@ const progressAtCloudSyncStart = progress;
 void syncProgressFromCloud(progressAtCloudSyncStart);
 void prepareToyNavigation();
 void refreshLauncherAccess();
-void startGame();
+void startGame().catch((error: unknown) => {
+  console.error("游戏初始化失败。", error);
+  const message = document.createElement("section");
+  message.setAttribute("role", "alert");
+  message.style.cssText =
+    "position:fixed;inset:50% auto auto 50%;z-index:1000;max-width:min(520px,calc(100vw - 48px));transform:translate(-50%,-50%);padding:24px 28px;border:4px solid #142033;border-radius:20px;background:#fffdf5;color:#142033;font:700 18px/1.6 system-ui;text-align:center;box-shadow:0 8px 0 #142033";
+  message.textContent = "游戏资源加载失败，请刷新页面或重新上传完整发布包。";
+  document.body.append(message);
+});

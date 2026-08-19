@@ -45,14 +45,22 @@ try {
     GameConfig.pickup.sixthGenJet.weight +
     GameConfig.pickup.ufo.weight;
   assert.ok(Math.abs(totalPickupWeight - 1) < Number.EPSILON);
+  assert.equal(GameConfig.pickup.redPacket.weight, 0);
+  assert.deepEqual(
+    [GameConfig.pickup.safeDistance, GameConfig.pickup.firstMaxDistance],
+    [150, 250],
+  );
+  assert.deepEqual(
+    [GameConfig.pickup.intervalMin, GameConfig.pickup.intervalMax],
+    [200, 380],
+  );
   assert.deepEqual(
     [
-      [0.49, "redPacket"],
-      [0.5, "skyLantern"],
-      [0.6799, "skyLantern"],
-      [0.68, "sixthGenJet"],
-      [0.8599, "sixthGenJet"],
-      [0.86, "ufo"],
+      [0, "skyLantern"],
+      [0.3599, "skyLantern"],
+      [0.36, "sixthGenJet"],
+      [0.7199, "sixthGenJet"],
+      [0.72, "ufo"],
       [0.9999, "ufo"],
     ].map(([roll, expected]) => {
       const game = makeGame().game;
@@ -60,7 +68,6 @@ try {
       return [game.choosePickupType(), expected];
     }),
     [
-      ["redPacket", "redPacket"],
       ["skyLantern", "skyLantern"],
       ["skyLantern", "skyLantern"],
       ["sixthGenJet", "sixthGenJet"],
@@ -69,6 +76,16 @@ try {
       ["ufo", "ufo"],
     ],
   );
+  assert.equal("redPacketCount" in makeGame().game, false);
+
+  const generatedPickup = makeGame().game;
+  generatedPickup.nextPickupDistance = 200;
+  const generationRolls = [0.1, 0.5, 0];
+  generatedPickup.random = () => generationRolls.shift() ?? 0;
+  generatedPickup.ensurePickups(200);
+  assert.equal(generatedPickup.pickups.length, 1);
+  assert.equal(generatedPickup.pickups[0].type, "skyLantern");
+  assert.equal(generatedPickup.nextPickupDistance, 400);
   assert.deepEqual(
     [GameConfig.pickup.sixthGenJet.minAltitude, GameConfig.pickup.sixthGenJet.maxAltitude],
     [40, 120],
@@ -178,7 +195,6 @@ try {
   magnet.game.updatePickups(0, { ...magnet.game.player.pos });
   assert.equal(magnet.game.pickups.find(({ id }) => id === 3).status, "attracting");
   assert.equal(magnet.game.pickups.find(({ id }) => id === 4).status, "available");
-  assert.equal(magnet.game.redPacketCount, 1);
   assert.deepEqual(magnet.audio, ["pickupRedPacket"]);
   magnet.game.powerUp.mode = "normal";
   magnet.game.updateAttractingRedPackets(1);
@@ -261,7 +277,6 @@ try {
   assert.equal(jet.game.pickups.some(({ id }) => id === 5), false);
   assert.equal(jet.game.pickups.find(({ id }) => id === 6).status, "available");
   assert.equal(jet.game.pickups.find(({ id }) => id === 7).status, "available");
-  assert.equal(jet.game.redPacketCount, 1);
 
   const atlas = JSON.parse(
     await readFile("assets/characters/atlas/characters.json", "utf8"),

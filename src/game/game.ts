@@ -165,8 +165,6 @@ export class Game {
   private impactFlash: ImpactFlashRuntime | null = null;
   private jetTrails: JetTrailRuntime[] = [];
   private maxDistance = 0;
-  private skipCount = 0;
-  private redPacketCount = 0;
   private landingElapsed = 0;
   private landingWasAirborne = false;
   private impactVelocity: Vec2 = { x: 0, y: 0 };
@@ -202,10 +200,6 @@ export class Game {
     return {
       phase: this.phase,
       distance,
-      score:
-        Math.floor(this.maxDistance / 10) +
-        this.skipCount * 5 +
-        this.redPacketCount * 50,
       ended: this.phase === "ended",
       launcherId: this.launcherId,
     };
@@ -385,8 +379,6 @@ export class Game {
     };
     this.verticalTrackingActive = false;
     this.maxDistance = 0;
-    this.skipCount = 0;
-    this.redPacketCount = 0;
     this.landingElapsed = 0;
     this.landingWasAirborne = false;
     this.impactVelocity = { x: 0, y: 0 };
@@ -875,7 +867,6 @@ export class Game {
     this.player.vel.x = this.impactVelocity.x * GameConfig.skip.horizontalRetention;
     this.player.vel.y =
       -Math.abs(this.impactVelocity.y) * GameConfig.skip.verticalRetention;
-    this.skipCount += 1;
     this.resetApproachState();
     this.emitAudio("skip");
   }
@@ -1097,9 +1088,7 @@ export class Game {
 
   private choosePickupType(): PickupType {
     const roll = this.random();
-    if (roll < GameConfig.pickup.redPacket.weight) return "redPacket";
-    const lanternThreshold =
-      GameConfig.pickup.redPacket.weight + GameConfig.pickup.skyLantern.weight;
+    const lanternThreshold = GameConfig.pickup.skyLantern.weight;
     if (roll < lanternThreshold) {
       return "skyLantern";
     }
@@ -1169,7 +1158,6 @@ export class Game {
     pickup.status = "collected";
     switch (pickup.type) {
       case "redPacket":
-        this.redPacketCount += 1;
         this.emitAudio("pickupRedPacket");
         break;
       case "skyLantern":
@@ -1240,7 +1228,6 @@ export class Game {
         continue;
       }
       pickup.status = "attracting";
-      this.redPacketCount += 1;
       this.emitAudio("pickupRedPacket");
     }
   }

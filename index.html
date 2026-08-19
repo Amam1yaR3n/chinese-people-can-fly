@@ -10,6 +10,7 @@
     <meta name="description" content="纯几何图形街机小游戏《中国人能飞》。" />
     <title>中国人能飞</title>
     <link rel="stylesheet" href="./src/style.css" />
+    <script src="//s1.hdslb.com/bfs/seed/toy/app/sdk/toy-sdk.js"></script>
   </head>
   <body>
     <main id="game-shell" aria-label="中国人能飞游戏区域">
@@ -21,7 +22,6 @@
         </h1>
         <output id="distance" aria-label="当前最远距离">0 米</output>
         <div class="hud-actions">
-          <output id="score" aria-label="当前分数">0 分</output>
           <button
             id="leaderboard-button"
             class="hud-icon-button leaderboard-button"
@@ -188,7 +188,7 @@
               <div class="leaderboard-columns" aria-hidden="true">
                 <span>名次</span>
                 <span>玩家</span>
-                <span>分数</span>
+                <span>距离</span>
               </div>
               <ol id="leaderboard-list" class="leaderboard-list"></ol>
             </div>
@@ -197,7 +197,7 @@
           <footer id="my-rank" class="my-rank" aria-live="polite">
             <strong class="my-rank-label">我</strong>
             <span id="my-rank-position">加载中…</span>
-            <output id="my-rank-score"></output>
+            <output id="my-rank-distance"></output>
           </footer>
         </div>
       </section>
@@ -305,7 +305,6 @@
                 <img
                   id="featured-video-image"
                   src="./assets/ui/featured-video-cover.jpg"
-                  data-fallback-src="./assets/ui/featured-video-cover.jpg"
                   alt=""
                   draggable="false"
                 />
@@ -336,7 +335,7 @@
               aria-live="polite"
             >
               <span id="launcher-access-status-text"
-                >正在核验视频互动状态…</span
+                >正在核验视频互动与关注状态…</span
               >
               <button
                 id="launcher-access-retry"
@@ -356,9 +355,8 @@
       </section>
 
       <section id="result" class="result" aria-live="assertive" hidden>
-        <span>本局得分</span>
-        <strong id="result-score">0 分</strong>
-        <small id="result-distance">你飞了 0 米</small>
+        <span>本局距离</span>
+        <strong id="result-distance">0 米</strong>
         <p id="result-message" class="result-message"></p>
       </section>
 
@@ -388,31 +386,6 @@
         <strong>请旋转为横屏</strong>
       </section>
     </main>
-    <script>
-      const useOfflineBundle =
-        window.location.protocol === "file:" ||
-        new URLSearchParams(window.location.search).has("offline");
-
-      if (useOfflineBundle) {
-        const offlineScript = document.createElement("script");
-        offlineScript.src = "./offline/game.js";
-        offlineScript.onerror = () => {
-          document.body.innerHTML = `
-            <main style="min-height:100vh;display:grid;place-items:center;background:#142033;color:#fffdf5;font:700 20px system-ui;text-align:center;padding:32px">
-              <div>离线游戏文件缺失。<br><small style="font-weight:400">请在项目目录执行 npm.cmd run build 后重试。</small></div>
-            </main>`;
-        };
-        document.body.append(offlineScript);
-      }
-    </script>
-    <script type="module">
-      const useOfflineBundle =
-        window.location.protocol === "file:" ||
-        new URLSearchParams(window.location.search).has("offline");
-
-      if (!useOfflineBundle) {
-        void import("./src/main.ts");
-      }
-    </script>
+    <script vite-ignore src="./offline/game.js"></script>
   </body>
 </html>

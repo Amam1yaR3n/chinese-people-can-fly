@@ -1,35 +1,56 @@
 import {
-  TOY_SCORE_MAX,
-  TOY_SCORE_MIN,
+  TOY_RANK_VALUE_MAX,
   readToyMyRank,
   readToyRankList,
-  submitToyScore,
-  type ToyMyRankReadResult,
-  type ToyRankListReadResult,
-  type ToyScoreSubmitRequest,
-  type ToyScoreSubmitResult,
+  submitToyRankValue,
+  type ToyRankValueSubmitRequest,
+  type ToyRankValueSubmitResult,
 } from "../platform/toy-sdk";
 
 export const LEADERBOARD_BOARD = 1 as const;
 export const LEADERBOARD_PERIOD = "all" as const;
 export const LEADERBOARD_LIMIT = 50;
 
-export interface LeaderboardLoadResult {
-  readonly list: ToyRankListReadResult;
-  readonly mine: ToyMyRankReadResult;
+type LeaderboardFailureResult =
+  | { readonly status: "unavailable" }
+  | { readonly status: "error" };
+
+export interface LeaderboardRankItem {
+  readonly rank: number;
+  readonly distance: number;
+  readonly nickname: string;
+  readonly avatar: string;
 }
 
-type SubmitScore = (
-  request: ToyScoreSubmitRequest,
-) => Promise<ToyScoreSubmitResult>;
+export type LeaderboardRankListReadResult =
+  | { readonly status: "ok"; readonly items: readonly LeaderboardRankItem[] }
+  | LeaderboardFailureResult;
 
-export interface LeaderboardScoreQueue {
-  enqueue(score: number): void;
+export type LeaderboardMyRankReadResult =
+  | {
+      readonly status: "ok";
+      readonly ranked: boolean;
+      readonly rank: number;
+      readonly distance: number;
+    }
+  | LeaderboardFailureResult;
+
+export interface LeaderboardLoadResult {
+  readonly list: LeaderboardRankListReadResult;
+  readonly mine: LeaderboardMyRankReadResult;
+}
+
+type SubmitDistance = (
+  request: ToyRankValueSubmitRequest,
+) => Promise<ToyRankValueSubmitResult>;
+
+export interface LeaderboardDistanceQueue {
+  enqueue(distance: number): void;
   whenIdle(): Promise<void>;
 }
 
 export const loadLeaderboard = async (): Promise<LeaderboardLoadResult> => {
-  const [list, mine] = await Promise.all([
+  const [rawList, rawMine] = await Promise.all([
     readToyRankList({
       board: LEADERBOARD_BOARD,
       period: LEADERBOARD_PERIOD,
@@ -40,24 +61,49 @@ export const loadLeaderboard = async (): Promise<LeaderboardLoadResult> => {
       period: LEADERBOARD_PERIOD,
     }),
   ]);
+  const list: LeaderboardRankListReadResult =
+    rawList.status === "ok"
+      ? {
+          status: "ok",
+          items: rawList.items.map((item) => ({
+            rank: item.rank,
+            distance: item.value,
+            nickname: item.nickname,
+            avatar: item.avatar,
+          })),
+        }
+      : rawList;
+  const mine: LeaderboardMyRankReadResult =
+    rawMine.status === "ok"
+      ? {
+          status: "ok",
+          ranked: rawMine.ranked,
+          rank: rawMine.rank,
+          distance: rawMine.value,
+        }
+      : rawMine;
+
   return { list, mine };
 };
 
-export const createLeaderboardScoreQueue = (
-  submit: SubmitScore = submitToyScore,
-): LeaderboardScoreQueue => {
-  let pendingScore: number | null = null;
+export const createLeaderboardDistanceQueue = (
+  submit: SubmitDistance = submitToyRankValue,
+): LeaderboardDistanceQueue => {
+  let pendingDistance: number | null = null;
   let running: Promise<void> | null = null;
 
   const flush = async (): Promise<void> => {
-    while (pendingScore !== null) {
-      const score = pendingScore;
-      const result = await submit({ board: LEADERBOARD_BOARD, score });
+    while (pendingDistance !== null) {
+      const distance = pendingDistance;
+      const result = await submit({
+        board: LEADERBOARD_BOARD,
+        value: distance,
+      });
       if (result.status !== "ok") return;
 
-      if (pendingScore !== null && result.score >= pendingScore) {
-        pendingScore = null;
-      } else if (pendingScore === score) {
+      if (pendingDistance !== null && result.value >= pendingDistance) {
+        pendingDistance = null;
+      } else if (pendingDistance === distance) {
         return;
       }
     }
@@ -71,14 +117,16 @@ export const createLeaderboardScoreQueue = (
   };
 
   return {
-    enqueue(score: number): void {
-      if (!Number.isFinite(score)) return;
+    enqueue(distance: number): void {
+      if (!Number.isFinite(distance) || distance <= 0) return;
       const normalized = Math.min(
-        TOY_SCORE_MAX,
-        Math.max(TOY_SCORE_MIN, Math.trunc(score)),
+        TOY_RANK_VALUE_MAX,
+        Math.max(0, Math.trunc(distance)),
       );
-      pendingScore =
-        pendingScore === null ? normalized : Math.max(pendingScore, normalized);
+      pendingDistance =
+        pendingDistance === null
+          ? normalized
+          : Math.max(pendingDistance, normalized);
       start();
     },
     async whenIdle(): Promise<void> {

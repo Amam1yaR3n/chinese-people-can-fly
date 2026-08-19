@@ -1,11 +1,14 @@
 const TOY_SDK_URL =
-  "https://s1.hdslb.com/bfs/seed/toy/app/sdk/toy-sdk.js";
+  "//s1.hdslb.com/bfs/seed/toy/app/sdk/toy-sdk.js";
 const TOY_SDK_SCRIPT_SELECTOR =
   'script[src*="/bfs/seed/toy/app/sdk/toy-sdk.js"]';
 const TOY_SDK_LOAD_TIMEOUT_MS = 6_000;
 
-export const TOY_SCORE_MIN = -16_777_216;
-export const TOY_SCORE_MAX = 16_777_215;
+const TOY_SCORE_MIN = -16_777_216;
+const TOY_SCORE_MAX = 16_777_215;
+
+export const TOY_RANK_VALUE_MIN = TOY_SCORE_MIN;
+export const TOY_RANK_VALUE_MAX = TOY_SCORE_MAX;
 
 export type ToyRankPeriod = "all" | "month" | "week" | "day";
 export type ToyNavigationType = "video" | "space";
@@ -13,6 +16,7 @@ export type ToyNavigationType = "video" | "space";
 type ToyAbility =
   | "navigate"
   | "getAuthorVideos"
+  | "getAuthorRelation"
   | "getVideoUserActions"
   | "getCloudStorage"
   | "setCloudStorage"
@@ -20,9 +24,9 @@ type ToyAbility =
   | "getRankList"
   | "getMyRank";
 
-export interface ToyRankItem {
+export interface ToyRankValueItem {
   readonly rank: number;
-  readonly score: number;
+  readonly value: number;
   readonly nickname: string;
   readonly avatar: string;
 }
@@ -33,6 +37,7 @@ interface ToySdk {
   getAuthorVideos?(request: {
     videos: readonly { bvid: string }[];
   }): Promise<unknown>;
+  getAuthorRelation?(): Promise<unknown>;
   getVideoUserActions?(request: {
     aids: readonly number[];
   }): Promise<unknown>;
@@ -91,6 +96,23 @@ export type ToyAuthorVideosReadResult =
   | { readonly status: "ok"; readonly items: readonly ToyAuthorVideo[] }
   | ToyFailureResult;
 
+export interface ToyAuthorRelation {
+  readonly isFollowing: boolean;
+}
+
+export type ToyAuthorRelationFailureReason =
+  | "not_logged_in"
+  | "unexpected_response"
+  | "request_failed";
+
+export type ToyAuthorRelationReadResult =
+  | { readonly status: "ok"; readonly data: ToyAuthorRelation }
+  | { readonly status: "unavailable" }
+  | {
+      readonly status: "error";
+      readonly reason: ToyAuthorRelationFailureReason;
+    };
+
 export interface ToyVideoUserActionsRequest {
   readonly aids: readonly number[];
 }
@@ -102,21 +124,31 @@ export interface ToyVideoUserActions {
   readonly favorited: boolean;
 }
 
+export type ToyVideoUserActionsFailureReason =
+  | "not_logged_in"
+  | "video_unavailable"
+  | "unexpected_response"
+  | "request_failed";
+
 export type ToyVideoUserActionsReadResult =
   | { readonly status: "ok"; readonly items: readonly ToyVideoUserActions[] }
-  | ToyFailureResult;
+  | { readonly status: "unavailable" }
+  | {
+      readonly status: "error";
+      readonly reason: ToyVideoUserActionsFailureReason;
+    };
 
 export type ToyCloudStorageReadResult =
   | { readonly status: "ok"; readonly items: Record<string, string> }
   | ToyFailureResult;
 
-export interface ToyScoreSubmitRequest {
+export interface ToyRankValueSubmitRequest {
   readonly board: 1 | 2 | 3;
-  readonly score: number;
+  readonly value: number;
 }
 
-export type ToyScoreSubmitResult =
-  | { readonly status: "ok"; readonly score: number }
+export type ToyRankValueSubmitResult =
+  | { readonly status: "ok"; readonly value: number }
   | ToyFailureResult;
 
 export interface ToyRankListRequest {
@@ -126,7 +158,7 @@ export interface ToyRankListRequest {
 }
 
 export type ToyRankListReadResult =
-  | { readonly status: "ok"; readonly items: readonly ToyRankItem[] }
+  | { readonly status: "ok"; readonly items: readonly ToyRankValueItem[] }
   | ToyFailureResult;
 
 export interface ToyMyRankRequest {
@@ -139,7 +171,7 @@ export type ToyMyRankReadResult =
       readonly status: "ok";
       readonly ranked: boolean;
       readonly rank: number;
-      readonly score: number;
+      readonly value: number;
     }
   | ToyFailureResult;
 
@@ -219,16 +251,21 @@ const clampScore = (score: number): number | null => {
   return Math.min(TOY_SCORE_MAX, Math.max(TOY_SCORE_MIN, Math.trunc(score)));
 };
 
-const parseRankItem = (value: unknown): ToyRankItem | null => {
+const parseRankItem = (value: unknown): ToyRankValueItem | null => {
   if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<ToyRankItem>;
+  const candidate = value as {
+    rank?: unknown;
+    score?: unknown;
+    nickname?: unknown;
+    avatar?: unknown;
+  };
   const rank = readInteger(candidate.rank, 1, Number.MAX_SAFE_INTEGER);
   const score = readInteger(candidate.score);
   if (rank === null || score === null) return null;
 
   return {
     rank,
-    score,
+    value: score,
     nickname: typeof candidate.nickname === "string" ? candidate.nickname : "",
     avatar: typeof candidate.avatar === "string" ? candidate.avatar : "",
   };
@@ -310,6 +347,19 @@ const parseVideoUserActions = (
   };
 };
 
+const readToyErrorType = (error: unknown): string => {
+  if (!error || typeof error !== "object") return "";
+  const candidate = error as { type?: unknown; code?: unknown };
+  if (typeof candidate.type === "string") return candidate.type;
+  return candidate.code === -101 ? "not_logged_in" : "";
+};
+
+const readResponseStatus = (value: unknown): string =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
+
+const isNotLoggedInStatus = (status: string): boolean =>
+  status === "not_logged_in" || status === "not_login" || status === "unauthorized";
+
 export const prepareToyNavigation = (): Promise<boolean> => {
   if (navigationPreparePromise) return navigationPreparePromise;
 
@@ -379,6 +429,53 @@ export const readToyAuthorVideos = async (
   }
 };
 
+export const readToyAuthorRelation = async (): Promise<
+  ToyAuthorRelationReadResult
+> => {
+  const sdk = await getSupportedToySdk("getAuthorRelation");
+  if (!sdk || typeof sdk.getAuthorRelation !== "function") {
+    return { status: "unavailable" };
+  }
+
+  try {
+    const response = await sdk.getAuthorRelation();
+    if (!response || typeof response !== "object") {
+      return { status: "error", reason: "unexpected_response" };
+    }
+
+    const candidate = response as {
+      status?: unknown;
+      data?: { isFollowing?: unknown };
+    };
+    const responseStatus = readResponseStatus(candidate.status);
+    if (responseStatus === "unsupported") return { status: "unavailable" };
+    if (isNotLoggedInStatus(responseStatus)) {
+      return { status: "error", reason: "not_logged_in" };
+    }
+    if (responseStatus !== "ok") {
+      return { status: "error", reason: "request_failed" };
+    }
+    if (typeof candidate.data?.isFollowing !== "boolean") {
+      return { status: "error", reason: "unexpected_response" };
+    }
+
+    return {
+      status: "ok",
+      data: { isFollowing: candidate.data.isFollowing },
+    };
+  } catch (error) {
+    console.warn("[ToySDK] 作者关注状态读取失败。", error);
+    const errorType = readToyErrorType(error);
+    if (errorType === "unsupported") return { status: "unavailable" };
+    return {
+      status: "error",
+      reason: isNotLoggedInStatus(errorType)
+        ? "not_logged_in"
+        : "request_failed",
+    };
+  }
+};
+
 export const readToyVideoUserActions = async (
   request: ToyVideoUserActionsRequest,
 ): Promise<ToyVideoUserActionsReadResult> => {
@@ -387,7 +484,7 @@ export const readToyVideoUserActions = async (
     request.aids.length > 50 ||
     request.aids.some((aid) => !Number.isSafeInteger(aid) || aid <= 0)
   ) {
-    return { status: "error" };
+    return { status: "error", reason: "unexpected_response" };
   }
   const requestedAids = new Set(request.aids);
 
@@ -400,26 +497,62 @@ export const readToyVideoUserActions = async (
     const response = await sdk.getVideoUserActions({
       aids: Array.from(requestedAids),
     });
-    if (!response || typeof response !== "object") return { status: "error" };
-    const candidate = response as { items?: unknown };
-    if (!Array.isArray(candidate.items)) return { status: "error" };
+    if (!response || typeof response !== "object") {
+      return { status: "error", reason: "unexpected_response" };
+    }
+    const candidate = response as { status?: unknown; items?: unknown };
+    const responseStatus = readResponseStatus(candidate.status);
+    if (responseStatus === "unsupported") return { status: "unavailable" };
+    if (isNotLoggedInStatus(responseStatus)) {
+      return { status: "error", reason: "not_logged_in" };
+    }
+    if (responseStatus && responseStatus !== "ok") {
+      return { status: "error", reason: "video_unavailable" };
+    }
+    if (!Array.isArray(candidate.items)) {
+      return { status: "error", reason: "unexpected_response" };
+    }
+
+    const failedStatus = candidate.items
+      .map((item) =>
+        item && typeof item === "object"
+          ? readResponseStatus((item as { status?: unknown }).status)
+          : "",
+      )
+      .find((status) => status && status !== "ok");
+    if (failedStatus === "unsupported") return { status: "unavailable" };
+    if (failedStatus && isNotLoggedInStatus(failedStatus)) {
+      return { status: "error", reason: "not_logged_in" };
+    }
+    if (failedStatus) {
+      return { status: "error", reason: "video_unavailable" };
+    }
 
     const parsedItems = candidate.items.map((item) =>
       parseVideoUserActions(item, requestedAids),
     );
-    if (parsedItems.some((item) => item === null)) return { status: "error" };
+    if (parsedItems.some((item) => item === null)) {
+      return { status: "error", reason: "unexpected_response" };
+    }
     const items = parsedItems as ToyVideoUserActions[];
     if (
       items.length !== requestedAids.size ||
       new Set(items.map(({ aid }) => aid)).size !== requestedAids.size
     ) {
-      return { status: "error" };
+      return { status: "error", reason: "video_unavailable" };
     }
 
     return { status: "ok", items };
   } catch (error) {
     console.warn("[ToySDK] 视频互动状态读取失败。", error);
-    return { status: "error" };
+    const errorType = readToyErrorType(error);
+    if (errorType === "unsupported") return { status: "unavailable" };
+    return {
+      status: "error",
+      reason: isNotLoggedInStatus(errorType)
+        ? "not_logged_in"
+        : "request_failed",
+    };
   }
 };
 
@@ -454,10 +587,10 @@ export const writeToyCloudStorage = async (
   }
 };
 
-export const submitToyScore = async (
-  request: ToyScoreSubmitRequest,
-): Promise<ToyScoreSubmitResult> => {
-  const score = clampScore(request.score);
+export const submitToyRankValue = async (
+  request: ToyRankValueSubmitRequest,
+): Promise<ToyRankValueSubmitResult> => {
+  const score = clampScore(request.value);
   if (score === null) return { status: "error" };
 
   const sdk = await getSupportedToySdk("submitScore");
@@ -470,9 +603,9 @@ export const submitToyScore = async (
     const submittedScore = readInteger(response?.score);
     return submittedScore === null
       ? { status: "error" }
-      : { status: "ok", score: submittedScore };
+      : { status: "ok", value: submittedScore };
   } catch (error) {
-    console.warn("[ToySDK] 排行榜分数提交失败，本局游戏不受影响。", error);
+    console.warn("[ToySDK] 排行榜成绩提交失败，本局游戏不受影响。", error);
     return { status: "error" };
   }
 };
@@ -491,7 +624,7 @@ export const readToyRankList = async (
     const limit = Math.max(1, Math.trunc(request.limit));
     const items = response
       .map(parseRankItem)
-      .filter((item): item is ToyRankItem => item !== null)
+      .filter((item): item is ToyRankValueItem => item !== null)
       .slice(0, limit);
     return { status: "ok", items };
   } catch (error) {
@@ -518,14 +651,14 @@ export const readToyMyRank = async (
     };
     if (typeof candidate.ranked !== "boolean") return { status: "error" };
     if (!candidate.ranked) {
-      return { status: "ok", ranked: false, rank: 0, score: 0 };
+      return { status: "ok", ranked: false, rank: 0, value: 0 };
     }
 
     const rank = readInteger(candidate.rank, 1, Number.MAX_SAFE_INTEGER);
     const score = readInteger(candidate.score);
     return rank === null || score === null
       ? { status: "error" }
-      : { status: "ok", ranked: true, rank, score };
+      : { status: "ok", ranked: true, rank, value: score };
   } catch (error) {
     console.warn("[ToySDK] 我的排行榜名次读取失败。", error);
     return { status: "error" };

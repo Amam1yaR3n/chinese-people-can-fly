@@ -13,6 +13,7 @@
     "verify:impact": "node tools/verify_impact_effect.mjs",
     "verify:mine": "node tools/verify_mine_sprite.mjs",
     "verify:leaderboard": "node tools/verify_leaderboard.mjs",
+    "verify:result": "node tools/verify_result_message.mjs",
     "verify:promotion": "node tools/verify_promotion_ui.mjs",
     "verify:unlocks": "node tools/verify_launcher_unlocks.mjs",
     "verify:missile-flame": "node tools/verify_missile_tail_flame.mjs",
