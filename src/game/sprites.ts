@@ -128,24 +128,37 @@ export const FlyerPoses = {
   airborne: {
     frame: frame(531, 1404, 1286, 683),
     anchor: { x: 643, y: 342 },
-    scale: 0.068 * GameConfig.visualScale,
+    scale:
+      0.068 * GameConfig.visualScale * GameConfig.player.poseVisualScale,
   },
   lantern: {
     frame: frame(8, 2095, 254, 812),
     // The physics center follows the person rather than the lantern envelope.
     anchor: { x: 127, y: 548 },
-    scale: 0.17 * GameConfig.visualScale,
+    scale:
+      0.17 * GameConfig.visualScale * GameConfig.player.poseVisualScale,
   },
   sliding: {
     frame: frame(270, 2095, 661, 251),
-    // 放大后仍保持腹部贴地：锚点下移，使底部边缘相对锚点仍为 24px。
-    anchor: { x: 331, y: 124.016 },
-    scale: 0.135 * GameConfig.visualScale,
+    // 放大后仍保持腹部贴地：底边相对物理中心固定为半个角色高度。
+    anchor: {
+      x: 331,
+      y:
+        251 -
+        (GameConfig.player.height / 2) *
+          GameConfig.pixelsPerMeter /
+          (0.135 *
+            GameConfig.visualScale *
+            GameConfig.player.poseVisualScale),
+    },
+    scale:
+      0.135 * GameConfig.visualScale * GameConfig.player.poseVisualScale,
   },
   falling: {
     frame: frame(939, 2095, 270, 585),
     anchor: { x: 135, y: 293 },
-    scale: 0.15 * GameConfig.visualScale,
+    scale:
+      0.15 * GameConfig.visualScale * GameConfig.player.poseVisualScale,
   },
   jet: {
     frame: frame(8, 2915, 902, 1069),

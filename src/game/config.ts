@@ -3,6 +3,8 @@ const DEG = Math.PI / 180;
 // 飞行角色与四大装置的统一视觉放大倍率。仅改变绘制尺寸，不改变物理判定
 // （拾取半径、地雷碰撞、弹弓拖拽热区等）；附着在装置上的世界锚点按锚点等比放大。
 const VISUAL_SCALE = 1.4;
+const MISSILE_TRUCK_VISUAL_SCALE = 1.2;
+const MISSILE_TRUCK_SCALE = VISUAL_SCALE * MISSILE_TRUCK_VISUAL_SCALE;
 
 const WHEEL_WORLD = { x: 0, y: -5.7 };
 const MUZZLE_WORLD = { x: 13.35, y: -16.42 };
@@ -44,6 +46,8 @@ export const GameConfig = {
     height: 8,
     startX: 0,
     startY: -100,
+    // 仅放大飞行、下落、孔明灯和肚皮滑行姿态，不影响物理尺寸。
+    poseVisualScale: 1.2,
   },
 
   hitter: {
@@ -120,19 +124,21 @@ export const GameConfig = {
 
   missileTruck: {
     groundWorld: { x: 0, y: 0 },
-    emptyAnchor: { x: 200, y: 620 },
-    emptyScale: 0.25 * VISUAL_SCALE,
+    // 两张车图都以车轮可见底边为地面锚点，缩放时车轮保持贴地。
+    emptyAnchor: { x: 200, y: 621 },
+    emptyScale: 0.25 * MISSILE_TRUCK_SCALE,
     loadedAnchor: { x: 319, y: 973 },
-    loadedScale: 0.15867 * VISUAL_SCALE,
+    loadedScale: 0.15867 * MISSILE_TRUCK_SCALE,
+    visualScale: MISSILE_TRUCK_VISUAL_SCALE,
     loadedWorld: scaleAround(
       { x: 0, y: 0 },
       MISSILE_LOADED_WORLD,
-      VISUAL_SCALE,
+      MISSILE_TRUCK_SCALE,
     ),
     launchWorld: scaleAround(
       { x: 0, y: 0 },
       MISSILE_LOADED_WORLD,
-      VISUAL_SCALE,
+      MISSILE_TRUCK_SCALE,
     ),
     rackAngle: 26 * DEG,
     launchSpeed: 260,

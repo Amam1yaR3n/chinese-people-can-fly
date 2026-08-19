@@ -236,7 +236,7 @@ canvas {
 .audio-overlay {
   position: absolute;
   inset: 0;
-  z-index: 10;
+  z-index: 20;
   place-items: center;
   padding: clamp(18px, 3vw, 48px);
   background: rgb(20 32 51 / 58%);
@@ -250,7 +250,7 @@ canvas {
 }
 
 .leaderboard-overlay {
-  z-index: 10;
+  z-index: 20;
 }
 
 .leaderboard-panel {
@@ -273,8 +273,8 @@ canvas {
 
 .leaderboard-close {
   position: absolute;
-  top: clamp(-14px, -1vw, -9px);
-  right: clamp(-14px, -1vw, -9px);
+  top: clamp(6px, 0.6vw, 10px);
+  right: clamp(6px, 0.6vw, 10px);
   z-index: 1;
   width: clamp(44px, 4vw, 52px);
   aspect-ratio: 1;
@@ -977,10 +977,12 @@ canvas {
   .settings-overlay,
   .leaderboard-overlay,
   .audio-overlay {
-    padding: 12px 20px;
+    padding: 22px 36px;
   }
 
   .leaderboard-panel {
+    width: min(570px, 100%);
+    height: min(320px, 100%);
     gap: 7px;
     padding: 12px 24px;
   }
@@ -1031,11 +1033,13 @@ canvas {
   }
 
   .settings-panel {
-    gap: clamp(14px, 2.5vw, 28px);
-    padding: 14px 24px;
+    width: min(570px, 100%);
+    gap: clamp(12px, 2vw, 20px);
+    padding: 12px 20px;
   }
 
   .audio-panel {
+    width: min(430px, 100%);
     padding: 18px 30px;
   }
 
@@ -1097,7 +1101,7 @@ canvas {
   }
 
   .launcher-card-icon img {
-    height: clamp(46px, 7.5vw, 72px);
+    height: clamp(42px, 6vw, 52px);
   }
 
   .launcher-picker {

@@ -33,6 +33,10 @@ try {
     "missileTruck",
     effectSprites,
   );
+  // Keep the timing assertion focused on the launch flame. Randomly generated
+  // pickups can otherwise switch the player into a power-up mode before the
+  // flame duration elapses.
+  game.pickups = [];
 
   let drawCalls = [];
   let transform = { x: 0, y: 0, rotation: 0 };

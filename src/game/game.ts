@@ -1766,8 +1766,14 @@ export class Game {
     this.drawOriginalPlayer(
       context,
       { x: 0, y: 0 },
-      this.player.width * GameConfig.pixelsPerMeter * GameConfig.visualScale,
-      this.player.height * GameConfig.pixelsPerMeter * GameConfig.visualScale,
+      this.player.width *
+        GameConfig.pixelsPerMeter *
+        GameConfig.visualScale *
+        GameConfig.player.poseVisualScale,
+      this.player.height *
+        GameConfig.pixelsPerMeter *
+        GameConfig.visualScale *
+        GameConfig.player.poseVisualScale,
     );
     context.restore();
   }
@@ -1776,7 +1782,8 @@ export class Game {
     context: CanvasRenderingContext2D,
     ground: Vec2,
   ): void {
-    const visualScale = GameConfig.visualScale;
+    const visualScale =
+      GameConfig.visualScale * GameConfig.missileTruck.visualScale;
     context.save();
     context.translate(ground.x, ground.y);
     context.fillStyle = "#7f8b32";
@@ -1794,7 +1801,7 @@ export class Game {
     for (const x of [-18 * visualScale, 58 * visualScale, 138 * visualScale]) {
       context.fillStyle = "#303744";
       context.beginPath();
-      context.arc(x, -12 * visualScale, 30 * visualScale, 0, Math.PI * 2);
+      context.arc(x, -30 * visualScale, 30 * visualScale, 0, Math.PI * 2);
       context.fill();
       context.stroke();
     }
@@ -2888,6 +2895,8 @@ export class Game {
     const visualScale = GameConfig.visualScale;
     const visualWidth = width * visualScale;
     const visualHeight = height * visualScale;
+    const poseWidth = visualWidth * GameConfig.player.poseVisualScale;
+    const poseHeight = visualHeight * GameConfig.player.poseVisualScale;
     const heightAboveGround = Math.max(0, -this.player.pos.y - this.player.height / 2);
     const shadowScale = clamp(1 - heightAboveGround / 100, 0.18, 1);
     const shadowWidth =
@@ -2961,13 +2970,18 @@ export class Game {
 
     if (this.powerUp.mode === "lantern") {
       const lanternWidth =
-        GameConfig.pickup.skyLantern.width * GameConfig.pixelsPerMeter;
+        GameConfig.pickup.skyLantern.width *
+        GameConfig.pixelsPerMeter *
+        GameConfig.player.poseVisualScale;
       const lanternHeight =
-        GameConfig.pickup.skyLantern.height * GameConfig.pixelsPerMeter;
-      const ropeLength = 14 * visualScale;
+        GameConfig.pickup.skyLantern.height *
+        GameConfig.pixelsPerMeter *
+        GameConfig.player.poseVisualScale;
+      const ropeLength =
+        14 * visualScale * GameConfig.player.poseVisualScale;
       const lanternScreen = {
         x: screen.x,
-        y: screen.y - visualHeight / 2 - ropeLength - lanternHeight / 2,
+        y: screen.y - poseHeight / 2 - ropeLength - lanternHeight / 2,
       };
       context.strokeStyle = GameConfig.palette.ink;
       context.lineWidth = 3;
@@ -2977,16 +2991,16 @@ export class Game {
         lanternScreen.y + lanternHeight * 0.48,
       );
       context.lineTo(
-        screen.x - visualWidth * 0.3,
-        screen.y - visualHeight / 2,
+        screen.x - poseWidth * 0.3,
+        screen.y - poseHeight / 2,
       );
       context.moveTo(
         lanternScreen.x + lanternWidth * 0.2,
         lanternScreen.y + lanternHeight * 0.48,
       );
       context.lineTo(
-        screen.x + visualWidth * 0.3,
-        screen.y - visualHeight / 2,
+        screen.x + poseWidth * 0.3,
+        screen.y - poseHeight / 2,
       );
       context.stroke();
       this.drawSkyLanternIcon(
@@ -2997,7 +3011,7 @@ export class Game {
       );
     }
 
-    this.drawOriginalPlayer(context, screen, visualWidth, visualHeight);
+    this.drawOriginalPlayer(context, screen, poseWidth, poseHeight);
   }
 
   private drawJetTrails(context: CanvasRenderingContext2D): void {
@@ -3167,6 +3181,7 @@ export class Game {
       tailFlameFootOffset,
       tailFlameWidth,
     } = GameConfig.missileTruck;
+    const poseVisualScale = GameConfig.player.poseVisualScale;
     const playerScreen = this.worldToScreen(this.player.pos);
     const playerRotation = this.airbornePlayerRotation();
     const cos = Math.cos(playerRotation);
@@ -3174,12 +3189,12 @@ export class Game {
     const feet = {
       x:
         playerScreen.x +
-        tailFlameFootOffset.x * cos -
-        tailFlameFootOffset.y * sin,
+        tailFlameFootOffset.x * poseVisualScale * cos -
+        tailFlameFootOffset.y * poseVisualScale * sin,
       y:
         playerScreen.y +
-        tailFlameFootOffset.x * sin +
-        tailFlameFootOffset.y * cos,
+        tailFlameFootOffset.x * poseVisualScale * sin +
+        tailFlameFootOffset.y * poseVisualScale * cos,
     };
     const image = this.effectSprites.missileTailFlame;
     const scale = tailFlameWidth / image.width;
